@@ -10,6 +10,7 @@ local.json
 # node_modules and webpack
 node_modules
 bundle.js
+package-lock.json
 
 # IntelliJ
 *.iml
