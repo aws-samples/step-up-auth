@@ -5,16 +5,20 @@
 *.js
 !jest.config.js
 *.d.ts
-node_modules
 
 # CDK asset staging directory
 .cdk.staging
 cdk.out
 
 # See https://help.github.com/ignore-files/ for more about ignoring files.
+
 # ignore local config and environment
 local.json
 .env
+
+# node_modules
+node_modules
+package-lock.json
 
 # IntelliJ
 *.iml
