@@ -1,0 +1,7 @@
+{
+  "logging": {
+    "level": "info",
+    "colorize_console": true,
+    "show_timestamp": true
+  }
+}

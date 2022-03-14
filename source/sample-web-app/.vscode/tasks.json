@@ -1,0 +1,67 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "npm",
+			"script": "build-dev",
+			"group": "build",
+			"problemMatcher": [],
+			"label": "npm: build-dev",
+			"detail": "webpack --env.NODE_ENV=development --progress"
+		},
+    {
+      "label": "sample-web-app:build",
+      "type": "shell",
+      "command": "./build.sh",
+      "group": "none",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "AWS_PROFILE": "default",
+          "AWS_REGION": "us-east-1",
+          "AWS_CLI_BIN": "aws",
+          "COGNITO_USER_POOL_ID": "us-east-1_XYZ",
+          "COGNITO_CLIENT_ID": "1234567890",
+          "API_GATEWAY_API_NAME": "step-up-auth",
+          "API_GATEWAY_API_ENDPOINT": "https://abcdef.execute-api.us-east-1.amazonaws.com",
+          "S3_BUCKET_NAME": "step-up-auth-web-1234567890-us-east-1",
+          "CLOUDFRONT_DISTRIBUTION_ID": "E1234567890"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "sample-web-app:deploy",
+      "type": "shell",
+      "command": "./deploy-awscli.sh",
+      "group": "none",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "AWS_PROFILE": "default",
+          "AWS_REGION": "us-east-1",
+          "AWS_CLI_BIN": "aws",
+          "S3_BUCKET_NAME": "step-up-auth-web-1234567890-us-east-1",
+          "CLOUDFRONT_DISTRIBUTION_ID": "E1234567890"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "cloudformation:echo:workspaceFolder",
+      "type": "shell",
+      "command": "echo ${workspaceFolder}",
+      "problemMatcher": []
+    }
+	]
+}

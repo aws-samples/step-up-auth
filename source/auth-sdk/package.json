@@ -1,0 +1,66 @@
+{
+  "name": "@step-up-auth/auth-sdk",
+  "version": "1.0.0",
+  "description": "Step-Up Auth SDK",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "author": "AWS Professional Services",
+  "repository": {
+    "type": "git",
+    "url": "https://code.amazon.com/packages/StepUpAuth/trees/mainline"
+  },
+  "bugs": {
+    "url": "https://code.amazon.com/packages/StepUpAuth/trees/mainline"
+  },
+  "homepage": "https://code.amazon.com/packages/StepUpAuth/trees/mainline",
+  "keywords": [
+    "node",
+    "typescript",
+    "auth-sdk",
+    "cognito",
+    "dynamodb",
+    "sns",
+    "ses"
+  ],
+  "private": "true",
+  "scripts": {
+    "build-dev": "npm run lint-dev && npm run build-ts",
+    "build-ts": "tsc",
+    "lint-dev": "eslint \"**/*.{js,ts}\"",
+    "build-prod": "npm run build-ts-prod",
+    "build-ts-prod": "tsc --project tsconfig.json",
+    "lint-prod": "eslint \"**/*.{js,ts}\" --quiet --fix",
+    "test": "jest --coverage=false --config jest.config.js --silent",
+    "test-unit": "jest --coverage=true --config jest.config.js --verbose",
+    "test-e2e": "jest --coverage=true --config jest-e2e.config.js --verbose"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.72",
+    "@types/jest": "^26.0.20",
+    "@types/node": "^14.14.31",
+    "@types/source-map-support": "^0.5.3",
+    "@types/uuid": "^8.3.0",
+    "@typescript-eslint/eslint-plugin": "^4.15.1",
+    "@typescript-eslint/parser": "^4.15.1",
+    "eslint": "^7.20.0",
+    "eslint-plugin-jest": "^24.1.5",
+    "jest": "^26.6.3",
+    "source-map-support": "^0.5.19",
+    "ts-jest": "^26.5.1",
+    "ts-node": "^9.1.1",
+    "typescript": "^4.1.5"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.19.0",
+    "@aws-sdk/client-ses": "^3.21.0",
+    "@aws-sdk/client-sns": "^3.21.0",
+    "@aws-sdk/util-dynamodb": "^3.19.0",
+    "uuid": "^8.3.2"
+  },
+  "engines": {
+    "node": ">=12.13.0",
+    "npm": ">=6.12.0"
+  }
+}

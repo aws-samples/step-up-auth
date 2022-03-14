@@ -1,0 +1,10 @@
+.error-boundary {
+  text-align: unset;
+}
+.error-boundary > details {
+  white-space: pre-wrap;
+}
+
+.error-boundary > details > p {
+  color: red;
+}

@@ -1,0 +1,10 @@
+html,body {
+  width: 100%;
+  height: 100%;
+  /* background-color: #f9fafc !important; */
+  background-color:rgba(0249,250,252,0) !important;
+}
+a {
+  color: rgba(0,0,0,.6) !important;
+  text-decoration: none !important;
+}

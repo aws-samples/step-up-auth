@@ -1,0 +1,58 @@
+{
+	"folders": [
+		{
+			"path": "documentation"
+		},
+		{
+			"path": "deployment"
+		},
+		{
+			"path": "source/auth-sdk"
+		},
+		{
+			"path": "source/auth-utils"
+		},
+		{
+			"path": "source/step-up-authorizer"
+		},
+		{
+			"path": "source/step-up-initiate"
+		},
+		{
+			"path": "source/step-up-challenge"
+		},
+		{
+			"path": "source/sample-api"
+		},
+		{
+			"path": "source/sample-web-app"
+		},
+		{
+			"path": ".",
+			"name": "root",
+		}
+	],
+	"settings": {
+		"editor.hover.delay": 1600,
+		"java.configuration.updateBuildConfiguration": "automatic",
+		"yaml.customTags": [
+		  "!Equals sequence",
+		  "!Not sequence",
+		  "!If sequence",
+		  "!FindInMap sequence",
+		  "!GetAtt",
+		  "!GetAZs",
+		  "!ImportValue",
+		  "!Join sequence",
+		  "!Ref",
+		  "!Select sequence",
+		  "!Split sequence",
+		  "!Sub"
+		],
+		"java.dependency.packagePresentation": "flat",
+		"eslint.workingDirectories": [{
+		  "mode": "auto"
+		}]
+	
+	}
+}

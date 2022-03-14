@@ -1,0 +1,10 @@
+{
+  "callbackWaitsForEmptyEventLoop": true,
+  "functionVersion": "$LATEST",
+  "functionName": "step-up-auth-authorizer-lambda",
+  "memoryLimitInMB": "128",
+  "logGroupName": "/aws/lambda/step-up-auth-authorizer-lambda",
+  "logStreamName": "2021/03/06/[$LATEST]1e0a6e05e94948018b96147bff33f9f4",
+  "invokedFunctionArn": "arn:aws:lambda:us-east-1:1234567890:function:step-up-auth-authorizer-lambda",
+  "awsRequestId": "f24a0b89-f0d4-48dd-885a-7232486d2dd4"
+}

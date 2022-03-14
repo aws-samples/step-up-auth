@@ -1,0 +1,97 @@
+{
+  "name": "sample-web-app",
+  "version": "1.0.0",
+  "description": "Sample web client that demonstrates how to handle step-up authentication",
+  "main": "index.js",
+  "directories": {
+    "test": "test",
+    "src": "src"
+  },
+  "author": "AWS Professional Services",
+  "repository": {
+    "type": "git",
+    "url": "https://code.amazon.com/packages/StepUpAuth/trees/mainline"
+  },
+  "bugs": {
+    "url": "https://code.amazon.com/packages/StepUpAuth/trees/mainline"
+  },
+  "homepage": "https://code.amazon.com/packages/StepUpAuth/trees/mainline",
+  "keywords": [
+    "react",
+    "amplify",
+    "step-up auth client"
+  ],
+  "private": "true",
+  "scripts": {
+    "start": "node ./node_modules/webpack/bin/webpack serve --config webpack.config.js --progress --stats-children --env NODE_ENV=development",
+    "build": "webpack --env NODE_ENV=production --progress",
+    "build-dev": "webpack --env NODE_ENV=development --progress",
+    "test-unit": "jest --coverage=true --testRegex='(/tests/unit/.*\\.(test|spec))\\.js?$'",
+    "test-unit-updatesnapshot": "jest --testRegex='(/tests/unit/.*\\.(test|spec))\\.js?$' -u",
+    "test-int": "jest --coverage=true --testRegex='(/tests/integration/.*\\.(test|spec))\\.js?$'"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.14.6",
+    "@babel/plugin-proposal-class-properties": "^7.14.5",
+    "@babel/plugin-transform-runtime": "^7.14.5",
+    "@babel/preset-env": "^7.14.7",
+    "@babel/preset-react": "^7.14.5",
+    "autoprefixer": "^10.3.1",
+    "babel-jest": "^27.0.6",
+    "babel-loader": "^8.2.2",
+    "clean-webpack-plugin": "^4.0.0-alpha.0",
+    "copy-webpack-plugin": "^9.0.1",
+    "crypto-browserify": "^3.12.0",
+    "css-loader": "^6.0.0",
+    "eslint": "^7.30.0",
+    "eslint-plugin-jest": "^24.3.6",
+    "eslint-plugin-react": "^7.24.0",
+    "fetch-mock": "^9.11.0",
+    "history": "^5.0.0",
+    "html-loader": "^2.1.2",
+    "html-webpack-plugin": "^5.3.2",
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^27.0.6",
+    "mini-css-extract-plugin": "^2.1.0",
+    "optimize-css-assets-webpack-plugin": "^6.0.1",
+    "postcss-loader": "^6.1.1",
+    "raw-loader": "^4.0.2",
+    "react-test-renderer": "^17.0.2",
+    "redux-mock-store": "^1.5.4",
+    "sass-loader": "^12.1.0",
+    "stream-browserify": "^3.0.0",
+    "terser-webpack-plugin": "^5.1.4",
+    "webpack": "^5.45.1",
+    "webpack-cli": "^4.7.2",
+    "webpack-dev-server": "^3.11.2",
+    "webpack-manifest-plugin": "^3.1.1"
+  },
+  "dependencies": {
+    "aws-amplify": "^4.2.0",
+    "aws-amplify-react": "^5.0.6",
+    "prop-types": "^15.7.2",
+    "qrcode.react": "^1.0.1",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-redux": "^7.2.4",
+    "react-router": "^5.2.0",
+    "react-router-dom": "^5.2.0",
+    "redux": "^4.1.0",
+    "redux-form": "^8.3.7",
+    "redux-thunk": "^2.3.0",
+    "semantic-ui-css": "^2.4.1",
+    "semantic-ui-react": "^2.0.3"
+  },
+  "jest": {
+    "moduleNameMapper": {
+      "^.+\\.css$": "identity-obj-proxy",
+      "^.+\\.(ico|jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$": "<rootDir>/test/__mocks__/fileMock.js"
+    },
+    "collectCoverageFrom": [
+      "src/**/*.{js,jsx}",
+      "!src/index.jsx",
+      "!src/config.js",
+      "!src/components/common/CustomSemanticUIControls.jsx"
+    ]
+  }
+}

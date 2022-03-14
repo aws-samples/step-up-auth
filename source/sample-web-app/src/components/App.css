@@ -1,0 +1,11 @@
+.app {
+  padding-top: 5px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+/*
+ * Redux Form style resets
+ */
+ .ui.toggle.checkbox {
+  margin-bottom: 1em;
+}

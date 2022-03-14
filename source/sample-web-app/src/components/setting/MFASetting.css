@@ -1,0 +1,14 @@
+.mfa-setting-page .mfa-setting-header {
+  padding: 0;
+}
+.mfa-setting-page .mfa-setting-header .mfa-setting-header-right {
+  margin: 0;
+}
+
+.mfa-setting-page .mfa-setting-header .mfa-setting-header-right .ui.form {
+  display: flex;
+}
+
+.mfa-setting-page .mfa-setting-header .mfa-setting-header-right .ui.form .field {
+  padding-right: 10px;
+}

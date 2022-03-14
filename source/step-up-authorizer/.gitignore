@@ -1,0 +1,41 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+# See https://help.github.com/ignore-files/ for more about ignoring files.
+
+# ignore local config and environment
+local.json
+.env
+
+# node_modules and webpack
+node_modules
+bundle.js
+
+# IntelliJ
+*.iml
+/.idea
+
+# build resources
+build
+
+# files
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.lock
+*gz
+*local.md
+*.local
+*.public
+*old
+*-skip
+
+# git
+!.gitkeep
+
+# misc project specifics
+backup*
+cert
+coverage
+tmp

@@ -1,0 +1,85 @@
+{
+  "type": "REQUEST",
+  "methodArn": "arn:aws:execute-api:us-east-1:1234567890:rbkydt5l26/dev/GET/info",
+  "resource": "/info",
+  "path": "/info",
+  "httpMethod": "GET",
+  "headers": {
+     "Accept": "*/*",
+     "Accept-Encoding": "gzip, deflate, br",
+     "Authorization": "Bearer afafasdf",
+     "Host": "rbkydt5l26.execute-api.us-east-1.amazonaws.com",
+     "Postman-Token": "c6204691-2bed-4cae-8528-12277c16bf15",
+     "User-Agent": "PostmanRuntime/7.26.10",
+     "X-Amzn-Trace-Id": "Root=1-604321c5-2f41ca5b240e9d07512a8ecd",
+     "X-Forwarded-For": "10.0.0.1",
+     "X-Forwarded-Port": "443",
+     "X-Forwarded-Proto": "https"
+  },
+  "multiValueHeaders": {
+     "Accept": [
+        "*/*"
+     ],
+     "Accept-Encoding": [
+        "gzip, deflate, br"
+     ],
+     "Authorization": [
+        "Bearer afafasdf"
+     ],
+     "Host": [
+        "rbkydt5l26.execute-api.us-east-1.amazonaws.com"
+     ],
+     "Postman-Token": [
+        "c6204691-2bed-4cae-8528-12277c16bf15"
+     ],
+     "User-Agent": [
+        "PostmanRuntime/7.26.10"
+     ],
+     "X-Amzn-Trace-Id": [
+        "Root=1-604321c5-2f41ca5b240e9d07512a8ecd"
+     ],
+     "X-Forwarded-For": [
+        "10.0.0.1"
+     ],
+     "X-Forwarded-Port": [
+        "443"
+     ],
+     "X-Forwarded-Proto": [
+        "https"
+     ]
+  },
+  "queryStringParameters": {},
+  "multiValueQueryStringParameters": {},
+  "pathParameters": {},
+  "stageVariables": {},
+  "requestContext": {
+     "resourceId": "4cce1j",
+     "resourcePath": "/info",
+     "httpMethod": "GET",
+     "extendedRequestId": "bwI24EVdIAMFxqA=",
+     "requestTime": "06/Mar/2021:06:31:33 +0000",
+     "path": "/dev/info",
+     "accountId": "1234567890",
+     "protocol": "HTTP/1.1",
+     "stage": "dev",
+     "domainPrefix": "rbkydt5l26",
+     "requestTimeEpoch": 1615012293594,
+     "requestId": "2c068cb5-2f08-4425-89b8-5d004d6197b5",
+     "identity": {
+        "cognitoIdentityPoolId": null,
+        "accountId": null,
+        "cognitoIdentityId": null,
+        "caller": null,
+        "sourceIp": "10.0.0.1",
+        "principalOrgId": null,
+        "accessKey": null,
+        "cognitoAuthenticationType": null,
+        "cognitoAuthenticationProvider": null,
+        "userArn": null,
+        "userAgent": "PostmanRuntime/7.26.10",
+        "user": null
+     },
+     "domainName": "rbkydt5l26.execute-api.us-east-1.amazonaws.com",
+     "apiId": "rbkydt5l26"
+  }
+}

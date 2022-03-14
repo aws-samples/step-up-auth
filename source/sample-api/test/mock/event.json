@@ -1,0 +1,125 @@
+{
+  "resource": "/transfer",
+  "path": "/transfer",
+  "httpMethod": "POST",
+  "headers": {
+     "accept": "application/json, text/plain, */*",
+     "accept-encoding": "gzip, deflate, br",
+     "accept-language": "en-US,en;q=0.9",
+     "Authorization": "Bearer eyJraWQiOiJPYjNzVm92R2RoNjJQcDlUTE5pYnpDRWhSd2JoTGpoa3h5Z29DSnpvWVdRPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiIxYmMyYThmYi1mYzBhLTQ0MGYtOTNhZS01NzZlMDg3OWQxODAiLCJjb2duaXRvOmdyb3VwcyI6WyJ1cy1lYXN0LTFfaVdjVFBoWkJBX2FkZnMiXSwiZXZlbnRfaWQiOiJhNTMyNjA1ZC1jMTRhLTQyZTAtOGQwYy03NThiOWMwNDQ3OTMiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiYXV0aF90aW1lIjoxNjE3MTgzNjM5LCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAudXMtZWFzdC0xLmFtYXpvbmF3cy5jb21cL3VzLWVhc3QtMV9pV2NUUGhaQkEiLCJleHAiOjE2MTcxODcyMzksImlhdCI6MTYxNzE4MzYzOSwianRpIjoiYzQwZDY3MWMtODkyMS00MTc1LWI1NWYtNGQ3NTEzZjA1NGY0IiwiY2xpZW50X2lkIjoiNmkwbzZzZWxhMTVqZGN0Z2VmbGttajRnam8iLCJ1c2VybmFtZSI6ImFkZnNfbW9naGFsc1xcYm9iIn0.Hb1b3kRSzBLX87KqNtgZi90bHZF9HdrsrawkCdW0EqWoqxgfeu2nn2F18M_3dVjPEVsQqffDONNV1-3oxuaoW_-oj-sNILT6pjGOK6VontpyW5dWNwzgtVZ99atcxc7lCtepsF8gMt4mi6lBM4mXgz-dB5lyd55v0H-_8vT9dAoEyuJQ5WjFRlka34Z0I6eH2L0hvVBZCpA414gVN7Mnd-c2XAJta5l_YIYcnWFRF3rI7yUXqrDVVki2Z9qIBRXfBDG4HoUtGyXhnBPd1QhhIeIVSr08m1PtNbNCCRUJXgNBkdH_bBtILdEiy1q29imI5G2H7GbuGVGt3qVXeFeMiA",
+     "content-type": "application/x-www-form-urlencoded",
+     "Host": "abcdef5126.execute-api.us-east-1.amazonaws.com",
+     "origin": "http://localhost:8080",
+     "referer": "http://localhost:8080/",
+     "sec-ch-ua": "\"Google Chrome\";v=\"89\", \"Chromium\";v=\"89\", \";Not A Brand\";v=\"99\"",
+     "sec-ch-ua-mobile": "?0",
+     "sec-fetch-dest": "empty",
+     "sec-fetch-mode": "cors",
+     "sec-fetch-site": "cross-site",
+     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36",
+     "X-Amzn-Trace-Id": "Root=1-60644399-38673d1119f2ddde71d72eba",
+     "X-Forwarded-For": "10.0.0.1",
+     "X-Forwarded-Port": "443",
+     "X-Forwarded-Proto": "https"
+  },
+  "multiValueHeaders": {
+     "accept": [
+        "application/json, text/plain, */*"
+     ],
+     "accept-encoding": [
+        "gzip, deflate, br"
+     ],
+     "accept-language": [
+        "en-US,en;q=0.9"
+     ],
+     "Authorization": [
+        "Bearer eyJraWQiOiJPYjNzVm92R2RoNjJQcDlUTE5pYnpDRWhSd2JoTGpoa3h5Z29DSnpvWVdRPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiIxYmMyYThmYi1mYzBhLTQ0MGYtOTNhZS01NzZlMDg3OWQxODAiLCJjb2duaXRvOmdyb3VwcyI6WyJ1cy1lYXN0LTFfaVdjVFBoWkJBX2FkZnMiXSwiZXZlbnRfaWQiOiJhNTMyNjA1ZC1jMTRhLTQyZTAtOGQwYy03NThiOWMwNDQ3OTMiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiYXV0aF90aW1lIjoxNjE3MTgzNjM5LCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAudXMtZWFzdC0xLmFtYXpvbmF3cy5jb21cL3VzLWVhc3QtMV9pV2NUUGhaQkEiLCJleHAiOjE2MTcxODcyMzksImlhdCI6MTYxNzE4MzYzOSwianRpIjoiYzQwZDY3MWMtODkyMS00MTc1LWI1NWYtNGQ3NTEzZjA1NGY0IiwiY2xpZW50X2lkIjoiNmkwbzZzZWxhMTVqZGN0Z2VmbGttajRnam8iLCJ1c2VybmFtZSI6ImFkZnNfbW9naGFsc1xcYm9iIn0.Hb1b3kRSzBLX87KqNtgZi90bHZF9HdrsrawkCdW0EqWoqxgfeu2nn2F18M_3dVjPEVsQqffDONNV1-3oxuaoW_-oj-sNILT6pjGOK6VontpyW5dWNwzgtVZ99atcxc7lCtepsF8gMt4mi6lBM4mXgz-dB5lyd55v0H-_8vT9dAoEyuJQ5WjFRlka34Z0I6eH2L0hvVBZCpA414gVN7Mnd-c2XAJta5l_YIYcnWFRF3rI7yUXqrDVVki2Z9qIBRXfBDG4HoUtGyXhnBPd1QhhIeIVSr08m1PtNbNCCRUJXgNBkdH_bBtILdEiy1q29imI5G2H7GbuGVGt3qVXeFeMiA"
+     ],
+     "content-type": [
+        "application/x-www-form-urlencoded"
+     ],
+     "Host": [
+        "abcdef5126.execute-api.us-east-1.amazonaws.com"
+     ],
+     "origin": [
+        "http://localhost:8080"
+     ],
+     "referer": [
+        "http://localhost:8080/"
+     ],
+     "sec-ch-ua": [
+        "\"Google Chrome\";v=\"89\", \"Chromium\";v=\"89\", \";Not A Brand\";v=\"99\""
+     ],
+     "sec-ch-ua-mobile": [
+        "?0"
+     ],
+     "sec-fetch-dest": [
+        "empty"
+     ],
+     "sec-fetch-mode": [
+        "cors"
+     ],
+     "sec-fetch-site": [
+        "cross-site"
+     ],
+     "User-Agent": [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36"
+     ],
+     "X-Amzn-Trace-Id": [
+        "Root=1-60644399-38673d1119f2ddde71d72eba"
+     ],
+     "X-Forwarded-For": [
+        "10.0.0.1"
+     ],
+     "X-Forwarded-Port": [
+        "443"
+     ],
+     "X-Forwarded-Proto": [
+        "https"
+     ]
+  },
+  "queryStringParameters": null,
+  "multiValueQueryStringParameters": null,
+  "pathParameters": null,
+  "stageVariables": null,
+  "requestContext": {
+     "resourceId": "ses26j",
+     "authorizer": {
+        "principalId": "gigya\\bob",
+        "integrationLatency": 285,
+        "step_up": "required",
+        "request_id": "d884f8c10d49b455",
+        "ffp": "",
+        "uuid": ""
+     },
+     "resourcePath": "/transfer",
+     "httpMethod": "POST",
+     "extendedRequestId": "dC-AEFAaIAMFk2g=",
+     "requestTime": "31/Mar/2021:09:40:41 +0000",
+     "path": "/dev/transfer",
+     "accountId": "1",
+     "protocol": "HTTP/1.1",
+     "stage": "dev",
+     "domainPrefix": "abcdef5126",
+     "requestTimeEpoch": 1617183641921,
+     "requestId": "6c5ff4f5-4386-441e-9736-5e3166e1c173",
+     "identity": {
+        "cognitoIdentityPoolId": null,
+        "accountId": null,
+        "cognitoIdentityId": null,
+        "caller": null,
+        "sourceIp": "10.0.0.1",
+        "principalOrgId": null,
+        "accessKey": null,
+        "cognitoAuthenticationType": null,
+        "cognitoAuthenticationProvider": null,
+        "userArn": null,
+        "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36",
+        "user": null
+     },
+     "domainName": "abcdef5126.execute-api.us-east-1.amazonaws.com",
+     "apiId": "abcdef5126"
+  },
+  "body": null,
+  "isBase64Encoded": false
+}

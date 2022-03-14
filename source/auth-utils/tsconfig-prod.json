@@ -1,0 +1,54 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
+
+// Reference: https://www.typescriptlang.org/docs/handbook/compiler-options.html
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "target": "es6",
+    "noImplicitAny": true,
+    "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "declaration": true,
+    "sourceMap": false,
+    "outDir": "build/out",
+    "baseUrl": ".",
+    "paths": {
+      "*": [
+        "node_modules/*",
+        "lib/types/*"
+      ]
+    },
+    "typeRoots": [
+      "node_modules/@types",
+      "index.d.ts",
+    ],
+    "types": [
+      "node",
+      "@types/jest"
+    ],
+    "strict": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    // "strictBindCallApply": true,
+    "lib": [
+      "es6",
+      "DOM"
+    ]
+  },
+  "include": [
+    "index.ts",
+    "lib/**/*",
+    "lib/config/*.json",
+
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "./**/*.spec.ts"
+  ]
+}

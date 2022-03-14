@@ -1,0 +1,43 @@
+.forget-page,
+.register-page,
+.login-page {
+  padding: 2vw;
+  margin-top: 10%;
+  margin-right: 20%;
+  margin-left: 20%;
+  background-color: #e47911;
+}
+.forget-page .fill-in,
+.register-page .fill-in,
+.login-page .fill-in {
+  width: 100%;
+  display: inline-block;
+}
+.forget-page .error-message,
+.register-page .error-message,
+.login-page .forgot-password {
+  margin-top: 1vw;
+  margin-bottom: 1vw;
+  text-align: center;
+}
+.login-page .forgot-password a {
+  color: rgba(0,0,0,.6);
+}
+.register-page .button-holder,
+.login-page .button-holder {
+  width: 60%;
+  margin-left: 20%
+}
+.forget-page .button-holder .button-holder-segment,
+.register-page .button-holder .button-holder-segment,
+.login-page .button-holder .button-holder-segment {
+  background-color: transparent;
+  border: transparent;
+  box-shadow: 0 0px 0px 0 rgba(0,0,0,.15);
+}
+.forget-page .button-holder .send-code-button,
+.register-page .button-holder .register-button,
+.login-page .button-holder .login-button,
+.login-page .button-holder .change-password-button {
+  margin-bottom: 0 !important;
+}

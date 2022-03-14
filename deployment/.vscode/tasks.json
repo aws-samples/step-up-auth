@@ -1,0 +1,74 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+    {
+      "label": "cdk:deploy",
+      "type": "shell",
+      "command": "./deploy.sh",
+      "group": "none",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "AWS_REGION": "us-east-1",
+          "AWS_ACCOUNT": "1234567890",
+          "AWS_PROFILE": "default",
+          "NODE_ENV": "development",
+          "ENV_PREFIX": "dev",
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "cdk:undeploy",
+      "type": "shell",
+      "command": "./undeploy.sh",
+      "group": "none",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "AWS_REGION": "us-east-1",
+          "AWS_ACCOUNT": "1234567890",
+          "AWS_PROFILE": "default",
+          "NODE_ENV": "development",
+          "ENV_PREFIX": "dev",
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "cdk:undeploy:stack",
+      "type": "shell",
+      "command": "./node_modules/.bin/cdk",
+      "args": [
+        "destroy",
+        "--context", "env_prefix=dev",
+        "--context", "node_env=development",
+        "--context", "aws_region=us-east-1",
+        "--context", "aws_account=1234567890",
+        "--require-approval",
+        "never",
+        "\"StepUpAuthApi/APIG\""
+      ],
+      "group": "none",
+      "options": {
+        "cwd": "${workspaceFolder}",
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    }
+	]
+}

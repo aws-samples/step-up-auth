@@ -1,0 +1,7 @@
+{
+  "logging": {
+    "level": "debug",
+    "colorize_console": false,
+    "show_timestamp": false
+  }
+}

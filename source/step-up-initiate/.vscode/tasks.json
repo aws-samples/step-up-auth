@@ -1,0 +1,59 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // https://code.visualstudio.com/docs/editor/tasks-appendix
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "typescript",
+      "tsconfig": "tsconfig.json",
+      "problemMatcher": [
+          "$tsc"
+      ],
+      "group": {
+          "kind": "build",
+          "isDefault": true
+      }
+    },
+    {
+      "label": "step-up-initiate:build",
+      "type": "shell",
+      "command": "./build.sh",
+      "group": "none",
+      "args": [
+        "generate-deployable-zip"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "step-up-initiate:deploy",
+      "type": "shell",
+      "command": "./deploy-awscli.sh",
+      "group": "none",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "AWS_PROFILE": "default",
+          "AWS_REGION": "us-east-1",
+          "DEPLOYMENT_ENV": "development",
+          "AWS_LAMBDA_ROLE_ARN": "arn:aws:iam::1234567890:role/LambdaExecutionRole",
+          "ENV_PREFIX": "dev-"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

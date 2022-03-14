@@ -1,0 +1,37 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // https://code.visualstudio.com/docs/editor/tasks-appendix
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "typescript",
+      "tsconfig": "tsconfig.json",
+      "problemMatcher": [
+          "$tsc"
+      ],
+      "group": {
+          "kind": "build",
+          "isDefault": true
+      }
+    },
+    {
+      "label": "auth-sdk:build",
+      "type": "shell",
+      "command": "./build.sh",
+      "group": "none",
+      "args": [
+        "generate-compressed-module"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

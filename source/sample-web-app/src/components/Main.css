@@ -1,0 +1,17 @@
+.main {
+  height: 100vh;
+}
+.main .pushable .ui.menu .item,
+.main .pushable.menu-text {
+ color: rgba(0,0,0,.6);
+}
+.main .pushable>.pusher {
+ margin-right: 150px;
+}
+.main .pushable .segment-left,
+.main .pushable .segment-right {
+  text-align: initial;
+  overflow-x: hidden;
+  width: 50% !important;
+  word-break: break-all;
+}
