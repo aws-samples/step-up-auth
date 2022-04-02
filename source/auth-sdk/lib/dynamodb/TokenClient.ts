@@ -89,7 +89,8 @@ class TokenClient extends Client {
       log.debug('put operation successful', JSON.stringify(output));
       return token.id!;
     }
-    catch ( err ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( err: any ) {
       const errorMessage = `error occurred during put item operation - ${err.name}: ${err.message}`;
       log.error(errorMessage);
       throw new CreateException(errorMessage);
@@ -118,7 +119,8 @@ class TokenClient extends Client {
       const id = await this.createToken(token);
       return id;
     }
-    catch ( err ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( err: any ) {
       const errorMessage = `error occurred during put item operation - ${err.name}: ${err.message}`;
       log.error(errorMessage);
       throw new CreateException(errorMessage);
@@ -152,7 +154,8 @@ class TokenClient extends Client {
       log.error(errorMessage);
       throw new RecordNotFoundException(errorMessage);
     }
-    catch ( err ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( err: any ) {
       const errorMessage = `error while retrieving record with id: ${id} - ${err.name}: ${err.message}`;
       log.error(errorMessage);
       throw new RecordNotFoundException(errorMessage);
@@ -180,7 +183,9 @@ class TokenClient extends Client {
       const output: DeleteItemCommandOutput = await this.client.send(new DeleteItemCommand(input));
       log.debug(`successfully deleted record.  ${output.$metadata.httpStatusCode}`);
       return token.id!;
-    } catch ( err ) {
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( err: any ) {
       let errorMessage = `error while deleting record with id: ${id} - ${err.name}: ${err.message}`;
       if (err && err.code === 'ResourceNotFoundException') {
         errorMessage = `error while deleting record with id: ${id}.  table not found`;
@@ -248,7 +253,8 @@ class TokenClient extends Client {
       log.debug('update operation successful', JSON.stringify(output));
       return record.id!;
     }
-    catch ( err ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( err: any ) {
       const errorMessage = `error occurred during update item operation - ${err.name}: ${err.message}`;
       log.error(errorMessage);
       throw new UpdateException(errorMessage);

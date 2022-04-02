@@ -43,10 +43,11 @@ describe('handler', () => {
   let sendMock: jest.Mock;
 
   beforeEach(() => {
-    sendMock = (jest.spyOn(
+    sendMock = (
+      (jest.spyOn(
       CognitoIdentityProviderClient.prototype,
       'send'
-    ) as jest.Mock).mockClear();
+      ) as unknown) as jest.Mock).mockClear();
   });
 
   it('returns the correct OPTIONS response', async () => {

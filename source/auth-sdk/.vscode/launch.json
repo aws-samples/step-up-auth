@@ -24,7 +24,9 @@
           "--testTimeout=300000" // 5 mins, default = 5000ms = 5 s
       ],
       "env": {
-        "AWS_PROFILE": "default"
+        "AWS_PROFILE": "default",
+        "AWS_REGION": "us-east-1",
+        "ENV_PREFIX": "dev"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",
@@ -44,7 +46,9 @@
           "--testTimeout=300000" // 5 mins, default = 5000ms = 5 s
       ],
       "env": {
-        "AWS_PROFILE": "default"
+        "AWS_PROFILE": "default",
+        "AWS_REGION": "us-east-1",
+        "ENV_PREFIX": "dev"
       },
       "console": "integratedTerminal",
       "internalConsoleOptions": "neverOpen",

@@ -19,8 +19,11 @@ describe('CognitoToken test suite', () => {
 
     expect(idToken.isIdToken()).toBeTruthy();
     expect(idToken.isAccessToken()).toBeFalsy();
+    // eslint-disable-next-line jest/prefer-to-be
     expect(idToken.getUsernameClaim()).toEqual('ADFS_moghals\\alice');
+    // eslint-disable-next-line jest/prefer-to-be
     expect(idToken.getStepUpClaim()).toEqual('');
+    // eslint-disable-next-line jest/prefer-to-be
     expect(idToken.getRequestIdClaim()).toEqual('');
   });
 
@@ -30,6 +33,7 @@ describe('CognitoToken test suite', () => {
 
     expect(accessToken.isAccessToken()).toBeTruthy();
     expect(accessToken.isIdToken()).toBeFalsy();
+    // eslint-disable-next-line jest/prefer-to-be
     expect(accessToken.getUsernameClaim()).toEqual('ADFS_moghals\\alice');
   });
 
@@ -39,15 +43,20 @@ describe('CognitoToken test suite', () => {
 
     try {
       accessToken.isAccessToken();
-    } catch ( e ) {
-      // eslint-disable-next-line jest/no-conditional-expect, jest/no-try-expect
+
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( e: any ) {
+      // eslint-disable-next-line jest/no-conditional-expect, jest/prefer-to-be
       expect(e.message).toEqual('invalid token');
     }
 
     try {
       accessToken.isIdToken();
-    } catch ( e ) {
-      // eslint-disable-next-line jest/no-conditional-expect, jest/no-try-expect
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( e: any ) {
+      // eslint-disable-next-line jest/no-conditional-expect, jest/prefer-to-be
       expect(e.message).toEqual('invalid token');
     }
   });

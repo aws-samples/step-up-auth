@@ -61,7 +61,8 @@ describe('token verification test suite', () => {
     try {
       jwt.verify(accessToken, accessTokenKey.pem);
     }
-    catch ( e ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( e: any ) {
       errorMessage = e.message;
     }
 
@@ -104,7 +105,8 @@ describe('token verification test suite', () => {
     try {
       jwt.verify(idToken, idTokenKey.pem);
     }
-    catch ( e ) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    catch ( e: any ) {
       errorMessage = e.message;
     }
 
