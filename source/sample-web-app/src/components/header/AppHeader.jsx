@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT-0
 
 import React, { Component } from 'react';
-import { Header, Icon } from 'semantic-ui-react';
+import { Header } from 'semantic-ui-react';
+import { useNavigate } from "react-router-dom";
 import PropTypes from 'prop-types';
 import "./AppHeader.css";
 
@@ -15,7 +16,7 @@ class AppHeader extends Component {
   }
   handleHomeButtonClick() {
     console.log('AppHeader.handleBackButtonClick() called');
-    this.props.history.push('/');
+    this.props.navigate('/');
   }
   render() {
     return (
@@ -39,7 +40,12 @@ class AppHeader extends Component {
 
 // Runtime type checking for React props
 AppHeader.propTypes = {
-  history: PropTypes.object
+  navigate: PropTypes.func,
 };
 
-export default AppHeader;
+function WithNavigate(props) {
+  let navigate = useNavigate();
+  return <AppHeader {...props} navigate={navigate} />;
+}
+
+export default WithNavigate;

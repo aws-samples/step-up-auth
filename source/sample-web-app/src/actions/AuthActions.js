@@ -32,7 +32,7 @@ export function authError(error) {
 }
 
 // Cognito - Auth.signIn()
-export function login({ username, password }, history) {
+export function login({ username, password }, navigate) {
   return function(dispatch) {
     console.log('actions.login(): username password:', { username, password });
 
@@ -61,7 +61,6 @@ export function login({ username, password }, history) {
               // dispatch({ type: AUTH_USER });
 
               // we have authenticated, lets navigate to /main route
-              // history.push('/');
               const challengeResponse2 = '10';
               Auth.sendCustomChallengeAnswer(data, challengeResponse2)
                 .then(data2 => {
@@ -70,7 +69,7 @@ export function login({ username, password }, history) {
                   dispatch({ type: AUTH_USER });
 
                   // we have authenticated, lets navigate to /main route
-                  history.push('/');
+                  navigate('/');
                 })
                 .catch(err2 => {
                   console.log('Auth.sendCustomChallengeAnswer error:', err2);
@@ -86,7 +85,7 @@ export function login({ username, password }, history) {
           dispatch({ type: AUTH_USER });
 
           // we have authenticated, lets navigate to /main route
-          history.push('/');
+          navigate('/');
         }
       })
       .catch(err => {
@@ -118,31 +117,27 @@ export function validateUserSession() {
             if (session.isValid()) {
               // fire user is authenticated
               dispatch({ type: AUTH_USER });
-              // history.push('/');
             } else {
               // fire user is unauthenticated
               dispatch({ type: UNAUTH_USER });
-              // history.push('/');
             }
           })
           .catch(err => {
             console.error('actions.validateUserSession():Auth.userSession() err:', err);
             // error occured during session validation, fire user is unauthenticated
             dispatch({ type: UNAUTH_USER });
-            // history.push('/');
           });
       })
       .catch(err => {
         console.error('actions.validateUserSession():Auth.currentAuthenticatedUser() err:', err);
         // error occured while retrieving current auth user, fire user is unauthenticated
         dispatch({ type: UNAUTH_USER });
-        // history.push('/');
       });
   };
 }
 
 // Cognito - Auth.completeNewPassword()
-export function setNewPassword({ cognitoUser, newPassword }, history) {
+export function setNewPassword({ cognitoUser, newPassword }, navigate) {
   return function(dispatch) {
     console.log('actions.setNewPassword(): cognitoUSer, newPassword:', { cognitoUser, newPassword });
 
@@ -161,7 +156,7 @@ export function setNewPassword({ cognitoUser, newPassword }, history) {
           dispatch({ type: AUTH_USER });
 
           // we have authenticated, lets navigate to /main route
-          history.push('/');
+          navigate('/');
         }
       })
       .catch(err => {
@@ -173,9 +168,9 @@ export function setNewPassword({ cognitoUser, newPassword }, history) {
 }
 
 // Cognito - Auth.signOut()
-export function logout({ username }, history) {
+export function logout(navigate) {
   return function(dispatch) {
-    console.log('actions.logout(): username: ', username);
+    console.log('actions.logout()');
 
     // signOut (cognito)
     Auth.signOut()
@@ -185,8 +180,7 @@ export function logout({ username }, history) {
         dispatch({ type: UNAUTH_USER });
 
         // we have authenticated, lets navigate to /main route
-        history.push('/');
-
+        navigate('/');
       })
       .catch(err => {
         console.error('actions.logout():Auth.signOut() err:', err);
@@ -197,7 +191,7 @@ export function logout({ username }, history) {
 }
 
 // Cognito - Auth.confirmSignIn()
-export function confirmLogin( { cognitoUser, code, mfaType }, history ) {
+export function confirmLogin( { cognitoUser, code, mfaType }, navigate) {
   return function(dispatch) {
     console.log('actions.confirmLogin(): cognitoUSer, code:', { cognitoUser, code });
 
@@ -210,8 +204,7 @@ export function confirmLogin( { cognitoUser, code, mfaType }, history ) {
         dispatch({ type: AUTH_USER });
 
         // we have authenticated, lets navigate to /main route
-        history.push('/');
-
+        navigate('/');
       })
       .catch(err => {
         console.error('actions.confirmLogin():Auth.confirmSignIn() err:', err);
@@ -222,7 +215,7 @@ export function confirmLogin( { cognitoUser, code, mfaType }, history ) {
 }
 
 // Cognito - Auth.signUp()
-export function register( { username, password, email, phone }, history ) {
+export function register( { username, password, email, phone }, navigate) {
   return function(dispatch) {
     console.log('actions.register(): username, password, email, phone: ', { username, password, email, phone });
 
@@ -238,7 +231,7 @@ export function register( { username, password, email, phone }, history ) {
           dispatch({ type: REGISTER_USER });
 
           // user registration successful, lets navigate to / route
-          history.push('/');
+          navigate('/');
         }
       })
       .catch( err => {
@@ -251,7 +244,7 @@ export function register( { username, password, email, phone }, history ) {
 }
 
 // Cognito - Auth.confirmSignUp()
-export function confirmRegistration( { cognitoUser, code }, history ) {
+export function confirmRegistration( { cognitoUser, code }, navigate) {
   return function(dispatch) {
     console.log('actions.confirmRegistration(): cognitoUSer, code:', { cognitoUser, code });
     const { username } = cognitoUser.user;
@@ -268,8 +261,7 @@ export function confirmRegistration( { cognitoUser, code }, history ) {
         dispatch({ type: REGISTER_USER_CONFIRM });
 
         // we have authenticated, lets navigate to /main route
-        history.push('/');
-
+        navigate('/');
       })
       .catch( err => {
         console.error('actions.confirmRegistration():Auth.confirmSignUp() err:', err);
@@ -282,7 +274,7 @@ export function confirmRegistration( { cognitoUser, code }, history ) {
 }
 
 // Cognito - Auth.resendSignUp()
-export function resendConfirmationCode( { cognitoUser }, history ) {
+export function resendConfirmationCode( { cognitoUser } ) {
   return function(dispatch) {
     console.log('actions.resendConfirmationCode(): username: ', { cognitoUser });
     const { username } = cognitoUser.user;
@@ -306,7 +298,7 @@ export function resendConfirmationCode( { cognitoUser }, history ) {
 
 
 // Cognito - Auth.forgotPassword()
-export function forgotPassword( { username }, history ) {
+export function forgotPassword( { username } ) {
   return function(dispatch) {
     console.log('actions.forgotPassword(): username: ', { username });
 
@@ -328,7 +320,7 @@ export function forgotPassword( { username }, history ) {
 
 
 // Cognito - Auth.forgotPasswordSubmit()
-export function confirmForgotPassword( { username, code, newPassword }, history ) {
+export function confirmForgotPassword( { username, code, newPassword }, navigate) {
   return function(dispatch) {
     console.log('actions.confirmForgotPassword(): username, code, newPassword: ', { username, code, newPassword });
 
@@ -336,11 +328,10 @@ export function confirmForgotPassword( { username, code, newPassword }, history 
     Auth.forgotPasswordSubmit(username, code, newPassword)
       .then( data => {
         console.log('actions.confirmForgotPassword():Auth.forgotPasswordSubmit() data:', data);
-
         // TODO - User password changed successfully, do we need to login again?
         dispatch({ type: FORGOT_PASSWORD_CONFIRM });
 
-        history.push('/');
+        navigate('/');
       })
       .catch( err => {
         console.error('actions.confirmForgotPassword():Auth.forgotPasswordSubmit() err:', err);

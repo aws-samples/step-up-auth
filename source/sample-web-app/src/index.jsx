@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT-0
 
 import React from 'react';
-import ReactDOM from 'react-dom';
-import { BrowserRouter as Router, Route } from "react-router-dom";
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from "react-router-dom";
 import { Provider } from 'react-redux';
 import Amplify from 'aws-amplify';
 import store from './store';
@@ -43,13 +43,10 @@ Amplify.configure({
 });
 
 
-ReactDOM.render(
-  <Provider store={store}>
-    <Router>
-      {/* mount the AppHeader for every route */}
-      <Route path="*" component={AppHeader} />
-      {/* Main app with additional <Route .. /> */}
-      <App />
-    </Router>
-  </Provider>
-  , document.querySelector('.app-container') || document.createElement('div'));
+const root = ReactDOM.createRoot(document.querySelector('.app-container') || document.createElement('div'));
+root.render(<Provider store={store}>
+  <BrowserRouter>
+    <AppHeader/>
+    <App />
+  </BrowserRouter>
+</Provider>);

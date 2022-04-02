@@ -7,7 +7,7 @@ import { connect } from 'react-redux';
 import { Field, reduxForm } from 'redux-form';
 import { Segment, Form, Icon, Button, Label } from 'semantic-ui-react';
 import { InputField } from '../common/CustomSemanticUIControls';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
 import {
   register as registerAction,
@@ -22,7 +22,9 @@ import './Register.css';
 class Register extends Component {
   constructor(props) {
     super(props);
-    this.renderAlert.bind(this);
+    this.dispatchResetError = this.dispatchResetError.bind(this);
+    this.renderAlert = this.renderAlert.bind(this);
+    this.onFormSubmit = this.onFormSubmit.bind(this);
   }
 
   dispatchResetError() {
@@ -39,29 +41,31 @@ class Register extends Component {
   }
 
   onFormSubmit({ username, password, email, phone, code }) {
-    console.log('Register.onFormSubmit() username, password, email, phone:', {username, password, email, phone});
+    const {
+      mfaRequired,
+      resendCode,
+      navigate} = this.props;
 
-    const {mfaRequired, resendCode} = this.props;
+    console.log('Register.onFormSubmit() username, password, email, phone:', {username, password, email, phone});
 
     if (
       (typeof mfaRequired == 'undefined' || mfaRequired == false) &&
       (typeof resendCode == 'undefined' || resendCode == false)) {
 
-      // we pass in the history function so we can navigate from loginAction
-      this.props.registerAction({ username, password, email, phone }, this.props.history);
+      this.props.registerAction({ username, password, email, phone }, navigate);
     } else if (mfaRequired == true &&
       (typeof resendCode == 'undefined' || resendCode == false)) {
 
       console.log('Login.onFormSubmit(): invoking setPasswordAction()');
       const { cognitoUser } = this.props;
 
-      this.props.confirmRegistrationAction({cognitoUser, code}, this.props.history);
+      this.props.confirmRegistrationAction({cognitoUser, code}, navigate);
     } else if (mfaRequired == true && resendCode == true) {
 
       console.log('Login.onFormSubmit(): invoking resendCodeAction()');
       const { cognitoUser } = this.props;
 
-      this.props.resendCodeAction({cognitoUser}, this.props.history);
+      this.props.resendCodeAction({cognitoUser});
     }
   }
 
@@ -173,8 +177,6 @@ class Register extends Component {
             </div>
           </Form>
         )}
-
-
       </div>
     );
   }
@@ -205,7 +207,7 @@ function validate(formProps) {
 // Runtime type checking for React props
 Register.propTypes = {
   registerAction: PropTypes.func,
-  history: PropTypes.object,
+  navigate: PropTypes.func,
   errorMessage: PropTypes.string,
   mfaRequired: PropTypes.bool,
   resendCode: PropTypes.bool,
@@ -254,9 +256,14 @@ Register = connect(
   mapDispatchToProps
 )(Register);
 
+function WithNavigate(props) {
+  let navigate = useNavigate();
+  return <Register {...props} navigate={navigate} />;
+}
+
 export default reduxForm({
   form: 'loginForm',
   fields: ['username', 'password', 'email', 'phone', 'code'],
   validate
-})(Register);
+})(WithNavigate);
 

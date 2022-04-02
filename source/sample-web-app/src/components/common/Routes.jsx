@@ -2,59 +2,36 @@
 // SPDX-License-Identifier: MIT-0
 
 import React from 'react';
-import PropTypes from 'prop-types';
-import { Route, Redirect } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 
-const unauthPath = '/login';
+const unAuthPath = '/login';
 const defaultPath = '/main';
 
-export const PublicRoute = ({ component: ReactComponent, authStatus, ...rest }) => {
-  return (
-    <Route {...rest} render={props =>
-      typeof authStatus === 'undefined' || authStatus === false
-        ? (<ReactComponent {...props} authStatus={authStatus} />) : (<Redirect to={defaultPath} />)
-    } />
-  );
-};
-PublicRoute.propTypes = {
-  component: PropTypes.any,
-  authStatus: PropTypes.bool,
-  validateUserAction: PropTypes.func
+export const DefaultRoute = (auth) => {
+  const {authStatus} = auth;
+  console.log('DefaultRoute called. auth:', authStatus);
+  // If authorized, return element that will navigate to a default page (logged in screen)
+  // otherwise, return element that will navigate to login page
+  return authStatus ? <Navigate to={defaultPath} /> : <Navigate to={unAuthPath} />;
 };
 
-export const PrivateRoute = ({ component: ReactComponent, authStatus, ...rest }) => {
-  return (
-    <Route {...rest} render={props =>
-      typeof authStatus === 'undefined' || authStatus === false
-        ? (<Redirect to={unauthPath} />) : (<ReactComponent {...props} authStatus={authStatus} />)
-    } />);
-};
-PrivateRoute.propTypes = {
-  component: PropTypes.any,
-  authStatus: PropTypes.bool
+export const PrivateRoute = (auth) => {
+  const {authStatus} = auth;
+  console.log('PrivateRoute called. auth:', authStatus);
+  // If authorized, return an outlet that will render child elements
+  // otherwise, return element that will navigate to login page
+  return authStatus ? <Outlet /> : <Navigate to={unAuthPath} />;
 };
 
-export const DefaultRoute = ({ authStatus, ...rest }) => {
-  return (
-    <Route {...rest} render={() =>
-      typeof authStatus === 'undefined' || authStatus === false
-        ? (<Redirect to={unauthPath} />) : (<Redirect to={defaultPath} />)
-    } />
-  );
-};
-DefaultRoute.propTypes = {
-  authStatus: PropTypes.bool
+export const PublicRoute = () => {
+  console.log('PublicRoute called.');
+  return <Outlet />;
 };
 
-// Custom Route component that passes a property ('mode') to the routed component
-export const RouteWithProps = ({ component: ReactComponent, mode, ...rest}) => {
-  console.log('RouteWithProps() mode:', mode);
-  return (
-    <Route {...rest} render={props => ( <ReactComponent mode={mode} {...props} /> )} />
-  );
+export const AuthRoute = (auth) => {
+  const {authStatus} = auth;
+  console.log('AuthRoute called. auth:', authStatus);
+  // If authorized, return defaultPath
+  // otherwise, return an outlet that will render child elements
+  return  authStatus ? <Navigate to={defaultPath} /> : <Outlet />;
 };
-RouteWithProps.propTypes = {
-  component: PropTypes.any,
-  mode: PropTypes.any
-};
-

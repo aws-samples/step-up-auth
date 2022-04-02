@@ -7,9 +7,8 @@ import { connect } from 'react-redux';
 import { Field, reduxForm } from 'redux-form';
 import { Segment, Form, Icon, Button, Label } from 'semantic-ui-react';
 import { InputField } from '../common/CustomSemanticUIControls';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
-//import * as actionCreators from '../../actions/AuthActions';
 import {
   login as loginAction,
   confirmLogin as confirmLoginAction,
@@ -23,7 +22,9 @@ class Login extends Component {
 
   constructor(props) {
     super(props);
-    this.renderAlert.bind(this);
+    this.dispatchResetError = this.dispatchResetError.bind(this);
+    this.renderAlert = this.renderAlert.bind(this);
+    this.onFormSubmit = this.onFormSubmit.bind(this);
   }
 
   dispatchResetError() {
@@ -44,23 +45,22 @@ class Login extends Component {
       cognitoUser,
       mfaRequired,
       mfaType,
-      changePassword} = this.props;
+      changePassword,
+      navigate} = this.props;
 
     console.log('Login.onFormSubmit() username, password, newPassword, newPasswordConfirm, code, mfaRequired, changePassword, cognitoUser:', {username, password, newPassword, newPasswordConfirm, code, mfaRequired, changePassword, cognitoUser});
 
     if ((typeof mfaRequired == 'undefined' || mfaRequired == false) &&
       (typeof changePassword == 'undefined' || changePassword == false)) {
       console.log('Login.onFormSubmit(): invoking loginAction()');
-      // we pass in the history function so we can navigate from loginAction
-      this.props.loginAction({ username, password }, this.props.history);
+      // we pass in the navigate function so we can navigate from loginAction
+      this.props.loginAction({ username, password }, navigate);
     } else if (mfaRequired == true && changePassword == false) {
-      // we pass in the history function so we can navigate from loginAction
-      this.props.confirmLoginAction({ cognitoUser, code, mfaType }, this.props.history);
+      this.props.confirmLoginAction({ cognitoUser, code, mfaType }, navigate);
     } else if (mfaRequired == false && changePassword == true) {
       console.log('Login.onFormSubmit(): invoking setPasswordAction()');
       const { cognitoUser } = this.props;
-
-      this.props.setPasswordAction({cognitoUser, newPassword});
+      this.props.setPasswordAction({cognitoUser, newPassword}, navigate);
     }
   }
 
@@ -229,7 +229,7 @@ Login.propTypes = {
   loginAction: PropTypes.func,
   confirmLoginAction: PropTypes.func,
   setPasswordAction: PropTypes.func,
-  history: PropTypes.object,
+  navigate: PropTypes.func,
   cognitoUser: PropTypes.object,
   errorMessage: PropTypes.string,
   changePassword: PropTypes.bool,
@@ -281,8 +281,13 @@ Login = connect(
   mapDispatchToProps
 )(Login);
 
+function WithNavigate(props) {
+  let navigate = useNavigate();
+  return <Login {...props} navigate={navigate} />;
+}
+
 export default reduxForm({
   form: 'loginForm',
   fields: ['username', 'password', 'newPassword', 'newPasswordConfirm', 'code'],
   validate
-})(Login);
+})(WithNavigate);

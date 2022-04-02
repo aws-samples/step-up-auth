@@ -4,15 +4,17 @@
 import React, { Component } from 'react';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
-import { Switch } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import PropTypes from 'prop-types';
-import { DefaultRoute, PrivateRoute, PublicRoute } from './common/Routes';
+import { DefaultRoute, PrivateRoute, AuthRoute } from './common/Routes';
 import ErrorBoundary from './common/ErrorBoundary';
 import { validateUserSession as validateUserAction } from '../actions/AuthActions';
 import Login from './auth/Login';
 import Forget from './auth/Forget';
 import Register from './auth/Register';
 import Main from './main';
+import { MFASetting } from './setting/MFASetting';
+import StepUp from './stepup/StepUp';
 
 import "./App.css";
 
@@ -20,6 +22,8 @@ class App extends Component {
   constructor(props) {
     super(props);
     this.handleWindowClose = this.handleWindowClose.bind(this);
+    this.validateUser = this.validateUser.bind(this);
+    this.renderContents = this.renderContents.bind(this);
   }
 
   UNSAFE_componentWillMount() {
@@ -43,45 +47,49 @@ class App extends Component {
     this.props.validateUserAction();
   }
 
+  renderContents() {
+    const { authenticated } = this.props;
+    console.log('App.renderContents() authenticated: ', authenticated);
+
+    // authenticated will be 'undefined' while we are still trying to resolve
+    // validateUserAction().  We need to treat that differently
+    if (typeof authenticated === 'undefined') {
+      return (
+        <>
+          {console.log('App.renderContents() showing "Please wait"')}
+          <span>Please wait</span>
+        </>
+      );
+    } else {
+      return (
+        <Routes>
+          <Route path="/" element={<DefaultRoute authStatus={authenticated} />}></Route>
+          <Route path="/login" element={<AuthRoute authStatus={authenticated} />}>
+            <Route path="/login" element={<Login/>}/>
+          </Route>
+          <Route path="/forget" element={<AuthRoute authStatus={authenticated} />}>
+            <Route path="/forget" element={<Forget/>}/>
+          </Route>
+          <Route path="/register" element={<AuthRoute authStatus={authenticated} />}>
+            <Route path="/register" element={<Register/>}/>
+          </Route>
+          <Route path="/main/*" element={<Main/>}>
+            {/* <Route path="/main/*" element={<Main/>}/> */}
+          </Route>
+        </Routes>
+      );
+    }
+  }
+
   render() {
     const { authenticated } = this.props;
 
-    console.log('App.render() called');
+    console.log('App.render() called.  authenticated:', authenticated);
 
     return (
       <div className="app">
-        {/* reason for adding ErrorBoundary inside Router is so we get a rference
-            to this.props.history for navigation purposes */}
         <ErrorBoundary>
-          <Switch>
-
-            {/* All default traffic will /.  Typically if authentication is enabled,
-              * then logged in user is routed to a landing page (overview for example)
-              * and guest users end up on a login screen.  For the sake of this example
-              * code we will by-pass login screen and assume all users are logged in
-              * by manually setting authStatus to true in constructor.
-              * PrivateRoute is used to route to a protected route / component
-              * PublicRoute, when authStatus==false, will redirect the user to a non-protect component
-              *              when authStatus==true, will redirect to a overview
-              * DefaultRoute is a special public route which doesn't take a component.  It
-              *              simply routes the user to either PublicRoute or a PrivateRoute
-              *              based on the value of authStatus
-              */}
-
-            {/* <DefaultRoute exact path="/" authStatus={authStatus} />
-            <PrivateRoute exact path="/overview" component={Overview} authStatus={authStatus} />
-            <PrivateRoute exact path="/counter" component={BuggyCounter} authStatus={authStatus} />
-            <PrivateRoute exact path="/service" component={Service} authStatus={authStatus} />
-            <PrivateRoute exact path="/details" component={Details} authStatus={authStatus} />
-            <PrivateRoute exact path="/calculator" component={Calculator} authStatus={authStatus} /> */}
-
-            <DefaultRoute exact path="/" authStatus={authenticated} />
-            <PublicRoute exact path="/login" component={Login} authStatus={authenticated} />
-            <PublicRoute exact path="/forget" component={Forget} authStatus={authenticated} />
-            <PublicRoute exact path="/register" component={Register} authStatus={authenticated} />
-            <PrivateRoute exact path="/main" component={Main} authStatus={authenticated} />
-
-          </Switch>
+          {this.renderContents()}
         </ErrorBoundary>
       </div>
     );
@@ -92,7 +100,6 @@ class App extends Component {
 App.propTypes = {
   validateUserAction: PropTypes.func,
   authenticated: PropTypes.bool,
-  history: PropTypes.object,
   errorMessage: PropTypes.string
 };
 

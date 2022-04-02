@@ -6,7 +6,7 @@ import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
 import { Field, reduxForm } from 'redux-form';
 import { Segment, Form, Icon, Button, Label } from 'semantic-ui-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { InputField } from '../common/CustomSemanticUIControls';
 import PropTypes from 'prop-types';
 import {
@@ -19,22 +19,22 @@ class Forget extends Component {
 
   constructor(props) {
     super(props);
-    this.renderAlert.bind(this);
+    this.renderAlert = this.renderAlert.bind(this);
+    this.onFormSubmit = this.onFormSubmit.bind(this);
   }
 
 
   onFormSubmit({ username, newPassword, code }) {
     const {
       forgotPasswordCode,
-      history} = this.props;
+      navigate} = this.props;
 
     console.log('Forget.onFormSubmit() username, newPassword, code, forgotPasswordCode:', {username, newPassword, code, forgotPasswordCode});
     // Need to do something to log user in
-    // we pass in the history function so we can navigate from forgotPasswordAction
     if (typeof forgotPasswordCode == 'undefined' || forgotPasswordCode == false) {
-      this.props.forgotPasswordAction({ username }, history);
+      this.props.forgotPasswordAction({ username });
     } else {
-      this.props.confirmForgotPasswordAction({username, code, newPassword}, history);
+      this.props.confirmForgotPasswordAction({username, code, newPassword}, navigate);
     }
   }
 
@@ -156,7 +156,7 @@ function validate(formProps) {
 Forget.propTypes = {
   forgotPasswordAction: PropTypes.func,
   confirmForgotPasswordAction: PropTypes.func,
-  history: PropTypes.object,
+  navigate: PropTypes.func,
   errorMessage: PropTypes.string,
   forgotPasswordCode: PropTypes.string,
   handleSubmit: PropTypes.func,
@@ -187,10 +187,15 @@ Forget = connect(
   mapDispatchToProps
 )(Forget);
 
+function WithNavigate(props) {
+  let navigate = useNavigate();
+  return <Forget {...props} navigate={navigate} />;
+}
+
 export default reduxForm({
   form: 'loginForm',
   fields: ['username'],
   validate
-})(Forget);
+})(WithNavigate);
 
 

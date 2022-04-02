@@ -254,10 +254,14 @@ module.exports = env => {
 
     // refer to https://webpack.js.org/configuration/dev-server/#devserver
     devServer: {
+      devMiddleware: {
+        writeToDisk: true
+      },
+      static: {
+        directory: APP_PATH,
+        publicPath: '/', // The bundled files will be available in the browser under this path.
+      },
       historyApiFallback: true,
-      contentBase: APP_PATH,
-      publicPath: '/', // The bundled files will be available in the browser under this path.
-      writeToDisk: true
     },
 
     // refer to https://webpack.js.org/configuration/plugins/

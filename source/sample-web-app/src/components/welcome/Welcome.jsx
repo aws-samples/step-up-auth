@@ -53,10 +53,6 @@ class Welcome extends Component {
   }
 
   validateUserSession() {
-    const {
-      history
-    } = this.props;
-
     Auth.currentAuthenticatedUser()
       .then(currentAuthUser => {
         console.log('Welcome.validateUserSession():Auth.currentAuthenticatedUser() currentAuthUser:', currentAuthUser);
@@ -100,7 +96,6 @@ class Welcome extends Component {
               });
 
               console.log(errorMessage);
-              history.push('/signin', { signInFailure: true, errorMessage, authenticated: false });
             }
           })
           .catch(err => {
@@ -114,8 +109,7 @@ class Welcome extends Component {
               validating: false
             });
 
-            console.error('Welcome.validateUserSession():Auth.userSession() err:', err);
-            history.push('/signin', { signInFailure: true, errorMessage, authenticated: false });
+            console.error('Welcome.validateUserSession():Auth.userSession() errorMessage:', errorMessage);
           });
       })
       .catch(err => {
@@ -129,8 +123,7 @@ class Welcome extends Component {
           validating: false
         });
 
-        console.error('Welcome.validateUserSession():Auth.currentAuthenticatedUser() err:', err);
-        history.push('/signin', { signInFailure: true, errorMessage, authenticated: false });
+        console.error('Welcome.validateUserSession():Auth.currentAuthenticatedUser() errorMessage:', errorMessage);
       });
   }
 
@@ -175,7 +168,6 @@ class Welcome extends Component {
       });
   }
 
-  /* eslint-disable react/jsx-handler-names */
   render() {
     const {
       sessionIdleTime,
@@ -222,8 +214,7 @@ class Welcome extends Component {
 
 // Runtime type checking for React props
 Welcome.propTypes = {
-  authenticated: PropTypes.bool,
-  history: PropTypes.object
+  authenticated: PropTypes.bool
 };
 
 export { Welcome };

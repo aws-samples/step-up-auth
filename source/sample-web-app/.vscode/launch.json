@@ -15,11 +15,11 @@
         "--progress",
         "--env",
           "NODE_ENV=development",
-          "AWS_REGION=us-east-1",
-          "USER_POOL_ID=us-east-1_XYZ",
-          "CLIENT_ID=C1234567890",
+          "AWS_REGION=us-east-2",
+          "USER_POOL_ID=us-east-2_fl0oceJ4I",
+          "CLIENT_ID=5gilcejcja9h6eomus1tcqtu18",
           "API_GATEWAY_API_NAME=step-up-auth",
-          "API_GATEWAY_API_ENDPOINT=https://abcdef.execute-api.us-east-1.amazonaws.com/dev/"
+          "API_GATEWAY_API_ENDPOINT=https://fk5qfh6vjd.execute-api.us-east-2.amazonaws.com/dev/"
       ]
     },
     {

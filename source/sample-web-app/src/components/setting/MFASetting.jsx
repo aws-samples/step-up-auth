@@ -3,7 +3,6 @@
 
 import React, { Component } from 'react';
 import QRCode from 'qrcode.react';
-import PropTypes from 'prop-types';
 import { Auth } from 'aws-amplify';
 import { Segment, Header, Form, Radio, Label, Container, Button } from 'semantic-ui-react';
 
@@ -327,10 +326,5 @@ class MFASetting extends Component {
     );
   }
 }
-
-// Runtime type checking for React props
-MFASetting.propTypes = {
-  history: PropTypes.object
-};
 
 export { MFASetting };
