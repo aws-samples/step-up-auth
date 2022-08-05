@@ -41,7 +41,7 @@ build() {
   project_name=$1
   echo
   echo ">> building ${project_name} lambda"
-  ( cd ../source/${project_name} && npm install && npm link @step-up-auth/auth-sdk && npm link @step-up-auth/auth-utils && ./build.sh generate-deployable-zip ) || exit 3
+  ( cd ../source/${project_name} && npm install && npm link @step-up-auth/auth-sdk @step-up-auth/auth-utils && ./build.sh generate-deployable-zip ) || exit 3
 }
 
 # build all lambdas
@@ -49,9 +49,10 @@ buildAll() {
   # auth-utils
   echo ">> preparing auth-utils"
   ( cd ../source/auth-utils && npm install && npm link ) > /tmp/$$.auth-utils-prepare.log 2> /tmp/$$.auth-utils-prepare.log || exit 3
-  #auth-sdk
+
+  # auth-sdk
   echo ">> preparing auth-sdk"
-  ( cd ../source/auth-sdk && npm install && npm link ) > /tmp/$$.auth-sdk-prepare.log 2> /tmp/$$.auth-sdk-prepare.log || exit 3
+  ( cd ../source/auth-sdk && npm install && npm link && npm link @step-up-auth/auth-utils ) > /tmp/$$.auth-sdk-prepare.log 2> /tmp/$$.auth-sdk-prepare.log || exit 3
 
   # step-up-authorizer
   build step-up-authorizer
@@ -66,8 +67,8 @@ buildAll() {
   build sample-api
 
   # web-ui
-  echo ">> building web-ui"
-  ( cd ../source/sample-web-app && npm install && npm run build ) > /tmp/$$.web-ui.build.log 2> /tmp/$$.web-ui.build.log || exit 3
+  echo ">> preparing web-ui"
+  ( cd ../source/sample-web-app && ./setup.sh ) > /tmp/$$.web-ui.setup.log 2> /tmp/$$.web-ui.setup.log || exit 3
 }
 
 # build one lambda/project incrementally.  this func performs a very

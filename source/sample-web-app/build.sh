@@ -48,7 +48,7 @@ fi
 (cd dist && rm -rf *) > /tmp/$$.init-clean.log 2> /tmp/$$.init-clean.log
 
 echo "Installing node modules"
-yarn install > /tmp/$$.yarn-install.log 2>&1
+yarn install > /tmp/$$.yarn-install.log 2> /tmp/$$.yarn-install.log
 
 echo "Running webpack build"
 node_modules/webpack/bin/webpack.js \
