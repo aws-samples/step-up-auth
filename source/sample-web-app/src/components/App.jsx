@@ -12,7 +12,7 @@ import { validateUserSession as validateUserAction } from '../actions/AuthAction
 import Login from './auth/Login';
 import Forget from './auth/Forget';
 import Register from './auth/Register';
-import Main from './main';
+import Main from './Main';
 import { MFASetting } from './setting/MFASetting';
 import StepUp from './stepup/StepUp';
 
