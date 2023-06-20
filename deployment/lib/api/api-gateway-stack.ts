@@ -48,7 +48,7 @@ export class ApiGatewayStack extends cdk.Stack {
     // create the lambda function
     const stepUpAuthorizerFunc = new lambda.Function(this, 'step-up-auth-authorizer-lambda', {
       code: lambda.Code.fromBucket(stepUpAuthorizerAsset.bucket, stepUpAuthorizerAsset.s3ObjectKey),
-      runtime: lambda.Runtime.NODEJS_12_X,
+      runtime: lambda.Runtime.NODEJS_14_X,
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
