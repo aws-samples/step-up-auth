@@ -35,7 +35,7 @@ export class LambdaStack extends cdk.Stack {
     // create the lambda function
     this.stepUpInitiateFunc = new lambda.Function(this, 'step-up-auth-initiate-lambda', {
       code: lambda.Code.fromBucket(stepUpInitiateAsset.bucket, stepUpInitiateAsset.s3ObjectKey),
-      runtime: lambda.Runtime.NODEJS_12_X,
+      runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -56,7 +56,7 @@ export class LambdaStack extends cdk.Stack {
     // create the lambda function
     this.stepUpChallengeFunc = new lambda.Function(this, 'step-up-auth-challenge-lambda', {
       code: lambda.Code.fromBucket(stepUpChallengeAsset.bucket, stepUpChallengeAsset.s3ObjectKey),
-      runtime: lambda.Runtime.NODEJS_12_X,
+      runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
@@ -79,7 +79,7 @@ export class LambdaStack extends cdk.Stack {
     // create the lambda function
     this.stepUpSampleApiFunc = new lambda.Function(this, 'step-up-auth-sample-api-lambda', {
       code: lambda.Code.fromBucket(stepUpSampleApiAsset.bucket, stepUpSampleApiAsset.s3ObjectKey),
-      runtime: lambda.Runtime.NODEJS_12_X,
+      runtime: lambda.Runtime.NODEJS_16_X,
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
