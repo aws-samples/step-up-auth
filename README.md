@@ -68,7 +68,9 @@ A sample record in this table is given below.  Let's go through each attribute:
 - userId is extracted from access_token and stored in the table for reference
 - createTimestamp represents when this item was created
 - lastUpdateTimestamp represents when this session item was last updated.
-- ttl indicates when this item will be automatically deleted from this table by DynamoDB service.  Note that the default TTL value is 24 hours (or 86400 seconds).  This value can be overridden using an environment variable SESSION_TABLE_ITEM_TTL set on Authorizer lambda.
+- ttl is the epoch time (in seconds) at which the step-up session expires.  It is set to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)`, so a step-up session never outlives the access token it was created for.  `SESSION_TABLE_ITEM_TTL` (seconds) is set on both the Authorizer lambda and the respond-to-challenge lambda, because the authorizer writes the `STEP_UP_REQUIRED` row and the challenge lambda writes the `STEP_UP_COMPLETED` row.  The CDK deployment sets it from the CDK context value `session_table_item_ttl`, which defaults to 900 seconds (15 minutes).  If the environment variable is not set at all (for example, when a lambda is deployed without CDK), the code falls back to 86400 seconds (24 hours).
+  - Expiry is enforced in code: the authorizer treats a session whose `ttl` is missing or not in the future as expired and starts a new step-up challenge (401).
+  - DynamoDB TTL is enabled on this attribute only to delete old rows.  DynamoDB can take up to a few days to delete an expired item, so the deletion is cleanup, not access control.
 
 
 ```json
@@ -149,9 +151,9 @@ Once the user provided challenge response is verified above, respond to challeng
 
 This solution can be deployed using CDK and it will create a working reference implementation that you can use for demonstration and learning purposes.  There are a few prerequisites to deployment.
 
-1. Install [node](https://nodejs.org/en/) and npm in your environment.  You can use a [package manager](https://nodejs.org/en/download/package-manager/#macos) for your platform to install these.
-2. Install [CDK](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html) guidelines for your environment.
-3. Optionally, install [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+1. Install [Node.js](https://nodejs.org/en/) 24 and npm 11 in your environment.  You can use a [package manager](https://nodejs.org/en/download/package-manager/#macos) for your platform to install these.  The Lambda functions run on the `nodejs24.x` runtime, and every project in this repository requires Node.js 24 (`engines.node >=24`).  Check with `node -v` and `npm -v`.
+2. Review the [CDK v2 getting started guide](https://docs.aws.amazon.com/cdk/v2/guide/getting_started.html).  You don't need a global CDK install: the `deployment` project pins the CDK CLI (`aws-cdk` 2.x) and the scripts run `./node_modules/.bin/cdk`.  The target account and region must be [bootstrapped](https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html) for CDK v2; `deploy.sh` runs `cdk bootstrap` for you.
+3. Install the [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).  `deploy.sh` uses it to upload the web app to S3 and invalidate the CloudFront cache.
 
 CDK will create several resources in your account as below:
 
@@ -166,11 +168,22 @@ CDK will create several resources in your account as below:
   - `sessions` table that holds temporary, user-initiate step-up sessions and their current status.
 - A React WebUI that demonstrates how to invoke a privileged API and go through step-up authentication.
 
-Prior to deploying the solution, build the necessary resources first.  Use the accompanying `build.sh` script in `deployment folder.  Simply trigger the build script from a terminal window as follows:
+Prior to deploying the solution, build the necessary resources first.  Use the accompanying `build.sh` script in the `deployment` folder.  It runs `npm ci` in every project (so each `package-lock.json` must be in sync with its `package.json`), builds the `auth-utils` and `auth-sdk` libraries, and packages the four Lambda functions into zip files under `source/<module>/build/compressed/`.  Simply trigger the build script from a terminal window as follows:
 
 ```sh
-cd deployment && ./build.sh
+cd deployment && npm ci && ./build.sh
 ```
+
+To run the lint checks and unit tests of a backend project (for example `source/step-up-authorizer`), install it and link the two local libraries first.  `npm ci` removes npm links, so link after installing, and link both libraries in one command:
+
+```sh
+(cd source/auth-utils && npm ci && npm link)
+(cd source/auth-sdk && npm ci && npm link && npm link @step-up-auth/auth-utils)
+cd source/step-up-authorizer && npm ci && npm link @step-up-auth/auth-sdk @step-up-auth/auth-utils
+npm run lint-dev && npm run build-ts-prod && npm test
+```
+
+The CDK project has its own checks: `cd deployment && npm run lint && npm run build && npm test`.
 
 Now let us deploy the solution using `deploy.sh` script present in the `deployment` folder.  Set the required environment variables first:
 
@@ -182,7 +195,7 @@ export NODE_ENV=development
 export ENV_PREFIX=dev
 ```
 
-`AWS_ACCOUNT` is used to bootstrap CDK deployment.  You must have AWS credentials files containing a profile with your account secret key and access key in order to do the deployment; set `AWS_PROFILE` to point to you profile.  Ensure that your account has enough privileges to create/update/delete following resources:
+`AWS_ACCOUNT` is used to bootstrap CDK deployment (`cdk bootstrap aws://$AWS_ACCOUNT/$AWS_REGION`).  You must have AWS credentials files containing a profile with your account secret key and access key in order to do the deployment; set `AWS_PROFILE` to point to you profile.  Ensure that your account has enough privileges to create/update/delete following resources:
 
 - Amazon Cognito
 - Amazon API Gateway API and resources
@@ -192,7 +205,13 @@ export ENV_PREFIX=dev
 - AWS Lambda functions
 - IAM Roles
 
-`NODE_ENV` can be set to `development` or `production`.  It controls the log output that Lambda functions generates.  And `ENV_PREFIX` allows you to prefix all resources with an tag; this enables a multi-tenant deployment of this solution.
+`NODE_ENV` can be set to `development` or `production`.  It controls the log output that Lambda functions generates (see [Logging](#logging) below).  And `ENV_PREFIX` allows you to prefix resources with a tag; the DynamoDB table names and the Lambda environment use it.  The CloudFormation stack names and the web bucket name (`step-up-auth-web-ui-<account>-<region>`) don't include it, so you can deploy only one copy of the solution per account and region.
+
+The following environment variables are optional:
+
+- `SESSION_TABLE_ITEM_TTL`: step-up session lifetime in seconds (a positive integer).  `deploy.sh` passes it as the CDK context value `session_table_item_ttl`, which sets `SESSION_TABLE_ITEM_TTL` on the Authorizer and respond-to-challenge Lambda functions.  Default: 900.
+- `CDK_TAGS`: space-separated `key=value` pairs, for example `CDK_TAGS="project=step-up-auth owner=me"`.  Each pair is passed as `--tags key=value` to both `cdk bootstrap` and `cdk deploy`.
+- `CDK_OUTPUTS_FILE`: path of a file that keeps the stack outputs (user pool id, app client id, API stage URL, bucket name, CloudFront domain) after the script exits.  Without it, the outputs go to a temporary file that is deleted when the script ends.
 
 Finally, trigger the stack deploying:
 
@@ -200,7 +219,37 @@ Finally, trigger the stack deploying:
 cd deployment && ./deploy.sh
 ```
 
-The output from the command will contain a CloudFront distribution URL.  Use this URL to load the sample web app.
+`deploy.sh` runs an incremental build, `cdk bootstrap`, `cdk deploy --all` (7 CloudFormation stacks), then builds the web app with the stack outputs and uploads it to the web bucket.  The output from the command will contain a CloudFront distribution URL.  Use this URL to load the sample web app.
+
+To remove the solution, use `undeploy.sh` with the same `AWS_REGION`, `AWS_ACCOUNT`, `NODE_ENV` and `ENV_PREFIX` values (and `AWS_PROFILE` for credentials):
+
+```sh
+cd deployment && ./undeploy.sh
+```
+
+`undeploy.sh` runs `cdk destroy --all --force`.  All sample resources use a `DESTROY` removal policy, so this deletes the Cognito user pool (and its users), the DynamoDB tables (and their items) and the web bucket (and its objects).  `undeploy.sh` doesn't remove the CDK bootstrap stack (`CDKToolkit`) or the Lambda CloudWatch log groups.
+
+#### Logging
+
+The Lambda functions log at `debug` level when `NODE_ENV=development` and at `info` level when `NODE_ENV=production`.  Debug logs include the environment, the incoming event and decoded token claims, but sensitive values are redacted:
+
+- Environment variables named `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`, or whose name contains `SECRET`, `TOKEN`, `PASSWORD` or `CREDENTIAL`, are logged as `<redacted>`.
+- A JWT is never logged in full.  It is replaced with a summary: the first 12 characters, the header `kid`/`alg`, and the claims `sub`, `username`, `jti`, `exp`, `iat`, `token_use`, `scope`, `client_id` and `aud`.
+- `Authorization` and `Identification` header values are replaced with the JWT summary (for a bearer JWT) or `<masked>`.
+
+For local debugging outside Lambda, `LOG_RAW_SECRETS=true` turns redaction off.  It has no effect inside Lambda (when `AWS_LAMBDA_FUNCTION_NAME` is set).
+
+#### Run the web app locally
+
+You can also run the sample web app on your machine against a deployed backend.  Take the values from the stack outputs (`UserPoolId`, `UserPoolClientId`, `StageUrl`):
+
+```sh
+cd source/sample-web-app && npm ci
+npm start -- --env USER_POOL_ID=<UserPoolId> --env CLIENT_ID=<UserPoolClientId> \
+  --env API_GATEWAY_API_NAME=step-up-auth --env API_GATEWAY_API_ENDPOINT=<StageUrl> --env AWS_REGION=<your region>
+```
+
+Open http://127.0.0.1:8080 in your browser.  The development server listens on `127.0.0.1:8080` only, so other machines can't reach it, and it fails to start if port 8080 is already in use.  The development server also writes a development build into `dist/`, so run `npm run build` (or `./build.sh`) again before you upload `dist/`.  The web app's own checks are `npm run lint && npm run test-unit && npm run build`.
 
 < screenshot >
 
