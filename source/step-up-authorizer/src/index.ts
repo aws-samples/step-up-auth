@@ -39,17 +39,15 @@ export const handler = async (event: APIGatewayRequestAuthorizerEvent | APIGatew
       return requestAuthorizer.generateResponseForEvent();
     }
     // if headers are missing in request authorizer, log a warning indicating
-    // malformed headers and return allow policy
-    else {
-      log.warn('missing headers in request authorizer');
-      const authorizer = new Authorizer(event.methodArn);
-      return authorizer.generateAllowResponse();
-    }
+    // malformed headers and fail closed.  raising a runtime error with "Unauthorized"
+    // message signals Lambda Request Authorizer to return HTTP 401 return code
+    log.warn('missing headers in request authorizer');
+    throw new Error('Unauthorized');
   }
 
   // all other types of authorizers are not supported, e.g. TOKEN authorizer.
-  // Return a pass through / allow policy
+  // Fail closed with a deny policy
   log.warn(`unsupported authorizer type: '${type}' with methodArn: '${methodArn}'`);
   const authorizer = new Authorizer(methodArn);
-  return authorizer.generateAllowResponse();
+  return authorizer.generateDenyResponse();
 };

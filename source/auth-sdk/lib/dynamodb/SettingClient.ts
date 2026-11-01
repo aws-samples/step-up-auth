@@ -21,6 +21,7 @@ import { Client } from './Client';
 import { Setting } from './model/Setting';
 import { CreateException } from './exception/CreateException';
 import { RecordNotFoundException } from './exception/RecordNotFoundException';
+import { ReadException } from './exception/ReadException';
 import { UpdateException } from './exception/UpdateException';
 import { StepUpStateEnum } from './model/types';
 
@@ -112,7 +113,8 @@ class SettingClient extends Client {
    * Retrieve item from setting table for given id
    * @param {string} id setting id
    * @return {Setting} Setting object
-   * @throws {RecordNotFoundException} If operation fails, throw 'Error'
+   * @throws {RecordNotFoundException} If there is no setting for given id
+   * @throws {ReadException} If DynamoDB operation fails
    */
    public async getSetting(id: string): Promise<Setting> {
     // construct parameters for the GetItemCommand
@@ -123,23 +125,25 @@ class SettingClient extends Client {
       }
     };
 
+    let output: GetItemCommandOutput;
     try {
-      const output: GetItemCommandOutput = await this.client.send(new GetItemCommand(input));
-      if (output && output.Item) {
-        const setting: Setting = unmarshall(output.Item) as Setting;
-        return setting;
-      }
-
-      // Item was undefined
-      const errorMessage = `unable to locate record with id: ${id}`;
-      log.error(errorMessage);
-      throw new RecordNotFoundException(errorMessage);
+      output = await this.client.send(new GetItemCommand(input));
     }
     catch ( err: any ) {
       const errorMessage = `error while retrieving record with id: ${id} - ${err.name}: ${err.message}`;
       log.error(errorMessage);
-      throw new RecordNotFoundException(errorMessage);
+      throw new ReadException(errorMessage);
     }
+
+    if (output && output.Item) {
+      const setting: Setting = unmarshall(output.Item) as Setting;
+      return setting;
+    }
+
+    // Item was undefined
+    const errorMessage = `unable to locate record with id: ${id}`;
+    log.error(errorMessage);
+    throw new RecordNotFoundException(errorMessage);
   }
 
   /**
@@ -247,28 +251,38 @@ class SettingClient extends Client {
    * stepUpState enum based on whether step-up authentication is
    * required for given api path
    * @param {string} api URI component or ARN of an API
-   * @return {StepUpStateEnum} return enumeration indicating whether step-auth is required for given api
+   * @return {StepUpStateEnum} STEP_UP_NOT_REQUIRED when there is no setting for the api.  STEP_UP_DENY
+   *   (fail closed) when the setting cannot be read or holds an unknown value
    */
    public async getStepUpStatus(api: string): Promise<StepUpStateEnum> {
+    let setting: Setting;
     try {
-      const setting: Setting = await this.getSetting(api);
-      log.debug(`retrieved settings for api ${api} stepUpState ${setting.stepUpState}`);
-      if (setting.stepUpState === StepUpStateEnum.STEP_UP_REQUIRED) {
-        return StepUpStateEnum.STEP_UP_REQUIRED;
-      }
-      else if (setting.stepUpState === StepUpStateEnum.STEP_UP_DENY) {
-        return StepUpStateEnum.STEP_UP_DENY;
-      }
+      setting = await this.getSetting(api);
     } catch (err: any) {
-      // if we did not find setting for api, getSetting() threw an error
-      // we return STEP_UP_NOT_REQUIRED enum
-      const errorMessage = `error occurred during getSetting operation - ${err.name}: ${err.message}`;
+      // no setting for api: step-up is not required
+      if (err instanceof RecordNotFoundException) {
+        log.debug(`no setting for api ${api}.  step-up not required`);
+        return StepUpStateEnum.STEP_UP_NOT_REQUIRED;
+      }
+      // any other error (e.g. DynamoDB or IAM failure): fail closed
+      const errorMessage = `error occurred during getSetting operation - ${err.name}: ${err.message}.  denying access`;
       log.error(errorMessage);
-      return StepUpStateEnum.STEP_UP_NOT_REQUIRED;
+      return StepUpStateEnum.STEP_UP_DENY;
     }
 
-    // in all other cases, return STEP_UP_NOT_REQUIRED enum
-    return StepUpStateEnum.STEP_UP_NOT_REQUIRED;
+    log.debug(`retrieved settings for api ${api} stepUpState ${setting.stepUpState}`);
+    switch (setting.stepUpState) {
+      case StepUpStateEnum.STEP_UP_REQUIRED:
+        return StepUpStateEnum.STEP_UP_REQUIRED;
+      case StepUpStateEnum.STEP_UP_DENY:
+        return StepUpStateEnum.STEP_UP_DENY;
+      case StepUpStateEnum.STEP_UP_NOT_REQUIRED:
+        return StepUpStateEnum.STEP_UP_NOT_REQUIRED;
+      default:
+        // unknown value: fail closed
+        log.error(`unknown stepUpState '${setting.stepUpState}' for api ${api}.  denying access`);
+        return StepUpStateEnum.STEP_UP_DENY;
+    }
   }
 
 }
