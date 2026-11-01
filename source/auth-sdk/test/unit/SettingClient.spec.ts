@@ -9,7 +9,7 @@ import {
   ReadException,
   RecordNotFoundException } from '../../index';
 
-describe('SettingClient fail-closed setting lookup (F5)', () => {
+describe('SettingClient fail-closed setting lookup', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   type SendMock = jest.Mock<(...args: any[]) => any>;
   let sendMock: SendMock;

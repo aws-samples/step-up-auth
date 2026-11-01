@@ -146,7 +146,7 @@ class RequestAuthorizer extends Authorizer {
             // DynamoDB deletes expired items lazily, so check the ttl here.  An expired
             // (or ttl-less) session is treated as "no session": break out of the switch
             // and fall through to the setting check below, which re-creates a
-            // STEP_UP_REQUIRED session (401) for a step-up API (C1, C2)
+            // STEP_UP_REQUIRED session (401) for a step-up API
             if (!retrievedSession.ttl || retrievedSession.ttl <= Math.floor(Date.now() / 1000)) {
               log.warn(`session '${sessionId}' with step-up status ${retrievedSession.stepUpStatus} has expired (ttl: ${retrievedSession.ttl}).  treating it as no session`);
               break;

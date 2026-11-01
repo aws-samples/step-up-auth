@@ -8,7 +8,7 @@ import {
   UpdateItemCommand } from '@aws-sdk/client-dynamodb';
 import { SessionClient, Session, StepUpStatusEnum } from '../../index';
 
-describe('SessionClient ttl (C2b)', () => {
+describe('SessionClient ttl', () => {
   const SESSION_TTL = 900;
   const originalEnv = { ...process.env };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -27,7 +27,7 @@ const CDK_JSON_CONTEXT = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '
 let assetRoot: string;
 
 beforeAll(() => {
-  assetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'sua-cdk-test-'));
+  assetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'step-up-auth-cdk-test-'));
   for (const [project, zip] of LAMBDA_ZIPS) {
     const dir = path.join(assetRoot, project, 'build', 'compressed');
     fs.mkdirSync(dir, { recursive: true });
@@ -99,7 +99,7 @@ describe('step-up-auth CDK app', () => {
 });
 
 // ----------------------------------------
-//   F4: SESSION_TABLE_ITEM_TTL + COGNITO_CLIENT_ID
+//   SESSION_TABLE_ITEM_TTL and COGNITO_CLIENT_ID environment variables
 // ----------------------------------------
 
 /** environment variables of the function whose logical id starts with `prefix` */
@@ -144,7 +144,7 @@ describe('authorizer and challenge environment', () => {
 });
 
 // ----------------------------------------
-//   F3: least-privilege DynamoDB IAM
+//   least-privilege DynamoDB IAM
 // ----------------------------------------
 
 type Statement = { Effect: string; Action: string | string[]; Resource?: unknown; Principal?: unknown };
@@ -196,7 +196,7 @@ describe('IAM', () => {
 });
 
 // ----------------------------------------
-//   F7: removal policies
+//   removal policies
 // ----------------------------------------
 
 describe('removal policies', () => {
@@ -222,7 +222,7 @@ describe('removal policies', () => {
 });
 
 // ----------------------------------------
-//   builder-security: private bucket, HTTPS-only CloudFront
+//   private web bucket and HTTPS-only CloudFront
 // ----------------------------------------
 
 describe('web UI exposure', () => {

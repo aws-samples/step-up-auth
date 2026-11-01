@@ -39,7 +39,7 @@ class TestChallengeResponder extends ChallengeResponder {
   }
 }
 
-describe('ChallengeResponder (C3, F1)', () => {
+describe('ChallengeResponder token check and session write', () => {
   const originalEnv = { ...process.env };
   const cognitoClient = new CognitoIdentityProviderClient({ region: 'us-east-1' });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

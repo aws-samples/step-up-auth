@@ -304,7 +304,7 @@ class SessionClient extends Client {
 
   /**
    * Compute the session ttl: base + SESSION_TABLE_ITEM_TTL, capped at the token expiry
-   * so that a session never outlives the access token it was created for (C2b)
+   * so that a session never outlives the access token it was created for
    * @param {number} baseEpochSeconds base timestamp in epoch seconds
    * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token
    * @returns {number} ttl in epoch seconds

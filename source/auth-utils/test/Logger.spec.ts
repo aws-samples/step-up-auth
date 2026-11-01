@@ -61,7 +61,7 @@ describe('Test Suite for config', () => {
   });
 });
 
-describe('Logger redaction (F2)', () => {
+describe('Logger redaction', () => {
   const originalEnv = { ...process.env };
   const testEnv: NodeJS.ProcessEnv = {
     AWS_ACCESS_KEY_ID: 'AKIATESTACCESSKEY01',

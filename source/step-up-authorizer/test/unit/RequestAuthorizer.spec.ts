@@ -39,7 +39,7 @@ const session = (stepUpStatus: StepUpStatusEnum, ttl?: number): Session => {
   return s;
 };
 
-describe('RequestAuthorizer session ttl enforcement (C1, C2, C2b)', () => {
+describe('RequestAuthorizer session ttl enforcement', () => {
   let verifySpy: jest.SpiedFunction<CognitoToken['verify']>;
   let getSessionSpy: jest.SpiedFunction<SessionClient['getSession']>;
   let createSessionSpy: jest.SpiedFunction<SessionClient['createSessionWithParams']>;
