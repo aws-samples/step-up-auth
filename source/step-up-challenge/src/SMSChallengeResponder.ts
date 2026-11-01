@@ -54,7 +54,8 @@ class SMSChallengeResponder extends ChallengeResponder {
         return ddbUpdateStatus;
       }
     } catch (error) {
-      console.log(error);
+      const err = error as Error;
+      log.error(`challenge verification or session update failed - ${err?.name}: ${err?.message}`);
       return false;
     }
     return false;

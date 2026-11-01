@@ -36,7 +36,7 @@ export const handler = async (
   event: APIGatewayProxyEvent,
   context: Context
 ): Promise<APIGatewayProxyResult> => {
-  log.debug('event: ', JSON.stringify(event));
+  log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
   log.debug('context ', JSON.stringify(context));
 
   if (event.path == '/initiate-auth' && event.httpMethod == 'OPTIONS') {

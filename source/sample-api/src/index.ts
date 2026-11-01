@@ -26,7 +26,7 @@ const BASE_HEADERS = {
  * @param context Lambda request context object
  */
 export const handler = async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewaySampleProxyResult> => {
-  log.debug('event: ', JSON.stringify(event));
+  log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
   log.debug('context ', JSON.stringify(context));
 
   // perform preflight checks - guard against missing path and http method.

@@ -23,7 +23,7 @@ const log = new Logger(fileName);
  * @returns {APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>}
  */
 export const handler = async (event: APIGatewayRequestAuthorizerEvent | APIGatewayTokenAuthorizerEvent, context: Context): Promise<APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>> => {
-  log.debug('event: ', JSON.stringify(event));
+  log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
   log.debug('context: ', JSON.stringify(context));
 
   // capture authorizer type and methodArn
