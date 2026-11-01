@@ -55,19 +55,25 @@ fi
 #####################################################################
 # VARIABLES
 
-outputs_file="/tmp/$$.cdk-infrastructure-outputs.json"
+# same context as deploy.sh, so the app synthesizes the same stacks
+context_args=(
+    --context "env_prefix=${ENV_PREFIX}"
+    --context "node_env=${NODE_ENV}"
+    --context "aws_region=${AWS_REGION}"
+    --context "aws_account=${AWS_ACCOUNT}"
+)
+if [ -n "${SESSION_TABLE_ITEM_TTL}" ]; then
+    context_args+=(--context "session_table_item_ttl=${SESSION_TABLE_ITEM_TTL}")
+fi
 
 
 #####################################################################
 # DESTROY / UNDEPLOY
 
-# deployment CDK stacks
+# destroy all CDK stacks.  the user pool, tables and web bucket (with its
+# objects) are deleted too (RemovalPolicy.DESTROY)
 ./node_modules/.bin/cdk \
     destroy \
-    --context "env_prefix=${ENV_PREFIX}" \
-    --context "node_env=${NODE_ENV}" \
-    --context "aws_region=${AWS_REGION}" \
-    --context "aws_account=${AWS_ACCOUNT}" \
-    --require-approval never \
-    --outputs-file "${outputs_file}" \
+    "${context_args[@]}" \
+    --force \
     --all || exit 3

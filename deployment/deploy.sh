@@ -54,14 +54,33 @@ fi
 # double check node_modules folder exists
 ls ./node_modules/.bin/cdk > /dev/null 2> /dev/null
 if [ ! $? -eq 0 ]; then
-  echo "Please run 'npm install' before running the deployment"
+  echo "Please run 'npm ci' before running the deployment"
   exit 3
 fi
 
 #####################################################################
 # VARIABLES
 
-outputs_file="/tmp/$$.cdk-infrastructure-outputs.json"
+# optional: CDK_OUTPUTS_FILE keeps the stack outputs after the script exits
+outputs_file="${CDK_OUTPUTS_FILE:-/tmp/$$.cdk-infrastructure-outputs.json}"
+
+context_args=(
+    --context "env_prefix=${ENV_PREFIX}"
+    --context "node_env=${NODE_ENV}"
+    --context "aws_region=${AWS_REGION}"
+    --context "aws_account=${AWS_ACCOUNT}"
+)
+# optional: SESSION_TABLE_ITEM_TTL (seconds) sets the step-up session lifetime (default 900)
+if [ -n "${SESSION_TABLE_ITEM_TTL}" ]; then
+    context_args+=(--context "session_table_item_ttl=${SESSION_TABLE_ITEM_TTL}")
+fi
+
+# optional: CDK_TAGS="key=value key=value" tags the bootstrap and application stacks
+tag_args=()
+read -r -a cdk_tags <<< "${CDK_TAGS}"
+for tag in "${cdk_tags[@]}"; do
+    tag_args+=(--tags "${tag}")
+done
 
 #####################################################################
 # BUILD
@@ -78,15 +97,13 @@ echo
 echo "Initiating CDK deployment.."
 
 # bootstrap CDK
-./node_modules/.bin/cdk bootstrap aws://${AWS_ACCOUNT}/${AWS_REGION} || exit 4
+./node_modules/.bin/cdk bootstrap "${tag_args[@]}" "aws://${AWS_ACCOUNT}/${AWS_REGION}" || exit 4
 
 # deployment CDK stacks
 ./node_modules/.bin/cdk \
     deploy \
-    --context "env_prefix=${ENV_PREFIX}" \
-    --context "node_env=${NODE_ENV}" \
-    --context "aws_region=${AWS_REGION}" \
-    --context "aws_account=${AWS_ACCOUNT}" \
+    "${context_args[@]}" \
+    "${tag_args[@]}" \
     --require-approval never \
     --outputs-file "${outputs_file}" \
     --all || exit 5
