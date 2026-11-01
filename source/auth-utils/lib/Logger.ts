@@ -42,7 +42,7 @@ class Logger {
     // remove default Console transport, we will add new one below
     winston.remove(winston.transports.Console);
 
-    const customFormat = winston.format.printf((i: { level: string, message: string; timestamp?: string}) => {
+    const customFormat = winston.format.printf((i: { level: string, message: unknown; timestamp?: unknown}) => {
       const logText = `${JSON.stringify(i.message)}`;
       if (config.get('logging.show_timestamp')) {
         return `${i.timestamp} [${i.level}] ${logText}`;

@@ -31,7 +31,7 @@ describe('Test Suite for config', () => {
   });
   it('environment is set properly', async () => {
     // test NODE_ENV
-    expect(process.env.NODE_ENV).toEqual("test");
+    expect(process.env.NODE_ENV).toBe("test");
 
     // test NODE_CONFIG_DIR
     const re = /.*\/test\/config$/;

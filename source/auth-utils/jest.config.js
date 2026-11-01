@@ -5,12 +5,6 @@
 // https://jestjs.io/docs/en/configuration.html
 
 module.exports = {
-  // https://jestjs.io/docs/en/configuration#globals-object
-  globals: {
-    "ts-jest": {
-        tsconfig: "tsconfig.json"
-    }
-  },
 
   // https://jestjs.io/docs/en/configuration#testregex-string--arraystring
   testRegex: '(/test/.*.(test|spec)).(js|ts)$',
@@ -23,7 +17,7 @@ module.exports = {
 
   // https://jestjs.io/docs/en/configuration#transform-objectstring-pathtotransformer--pathtotransformer-object
   transform: {
-    '^.+\\.tsx?$': 'ts-jest'
+    '^.+\\.tsx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }]
   },
 
   // https://jestjs.io/docs/en/configuration#modulefileextensions-arraystring
