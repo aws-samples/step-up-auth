@@ -48,10 +48,15 @@ fi
 (cd dist && rm -rf *) > /tmp/$$.init-clean.log 2> /tmp/$$.init-clean.log
 
 echo "Installing node modules"
-yarn install > /tmp/$$.yarn-install.log 2> /tmp/$$.yarn-install.log
+npm ci > /tmp/$$.npm-ci.log 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error during npm ci.  npm log:"
+    cat /tmp/$$.npm-ci.log
+    exit 2
+fi
 
 echo "Running webpack build"
-node_modules/webpack/bin/webpack.js \
+./node_modules/.bin/webpack \
   --env \
     NODE_ENV=production \
     AWS_REGION="${AWS_REGION}" \
@@ -60,5 +65,10 @@ node_modules/webpack/bin/webpack.js \
     API_GATEWAY_API_NAME="${API_GATEWAY_API_NAME}" \
     API_GATEWAY_API_ENDPOINT="${API_GATEWAY_API_ENDPOINT}" \
   --progress > /tmp/$$.webpack.log 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error during webpack build.  webpack log:"
+    cat /tmp/$$.webpack.log
+    exit 3
+fi
 
 echo "Done!"

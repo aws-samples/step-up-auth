@@ -9,12 +9,14 @@ trap_signals() {
     rm -rf /tmp/$$*
 }
 
-# Install yarn
-# We will use yarn to build the web application
+# Install the node modules locked in package-lock.json
+# We use npm to build the web application
 
-which yarn > /tmp/$$.yarn-bin-install-1.log 2> /tmp/$$.yarn-bin-install-1.log
+echo "Installing node modules"
+npm ci > /tmp/$$.npm-ci.log 2>&1
 if [ $? -ne 0 ]; then
-  echo "Installing yarn"
-  npm install --global yarn > /tmp/$$.yarn-bin-install-2.log 2> /tmp/$$.yarn-bin-install-2.log
-  echo "yarn installed in: `which yarn`"
+  echo "Error during npm ci.  npm log:"
+  cat /tmp/$$.npm-ci.log
+  exit 2
 fi
+

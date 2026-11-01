@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { Auth, API } from "aws-amplify";
+import { get, post } from "aws-amplify/api";
 
 import {
   TRANSFER_SUCCESS,
@@ -11,8 +11,22 @@ import {
   INFO_ERROR,
   INFO_CLEAR } from "./Types";
 import config from "../config";
-import {stepUpInitiate} from "./StepUpActions";
+import { getSessionTokens, stepUpInitiate } from "./StepUpActions";
 // import store from '../store';
+
+// Amplify v6 REST errors carry the HTTP response as
+// err.response = { statusCode, headers, body } with body as a string.
+function errorStatusCode(err) {
+  return err && err.response ? err.response.statusCode : undefined;
+}
+
+function errorBody(err) {
+  try {
+    return JSON.parse((err && err.response && err.response.body) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
 
 // Clean store - transfer results
 export function clearTransfer() {
@@ -36,42 +50,38 @@ export function transfer(mock) {
       return;
     }
 
-    Auth.currentSession()
-    .then((session) => {
-      const accessToken = session.getAccessToken().getJwtToken();
-      const idToken = session.getIdToken().getJwtToken();
-      return {accessToken, idToken};
-    })
+    getSessionTokens()
     .then((tokens) => {
       const { accessToken } = tokens;
 
       const apiName = config.REST_API_ENDPOINTS[0].name;
-      const path = 'transfer';
-      const myInit = {
+      const path = '/transfer';
+      const options = {
         headers: {
           Authorization: `Bearer ${accessToken}`
-        },
-        responseType: 'text', // options are: 'arraybuffer', 'document', 'json', 'text', 'stream'
-        response: true // OPTIONAL (return the entire Axios response object instead of only response.data)
+        }
       };
       // API call
-      API.post(apiName, path, myInit)
+      post({ apiName, path, options }).response
+      // the response body is read as text (Amplify v4 responseType: 'text')
+      .then(({ body }) => body.text())
       // handle API success
-      .then((response) => {
-        console.log('TransferActions.transfer(): response received', response);
+      .then((data) => {
+        console.log('TransferActions.transfer(): response received', data);
         dispatch({
           type: TRANSFER_SUCCESS,
           payload: {
-            data: response.data
+            data: data
           }
         });
 
       })
-      // catch API.post() error
+      // catch post() error
       .catch((err) => {
-        console.log('TransferActions.transfer() code:', err.response.status);
+        const statusCode = errorStatusCode(err);
+        console.log('TransferActions.transfer() code:', statusCode);
 
-        if (err.response.status == 401) {
+        if (statusCode == 401) {
           dispatch(stepUpInitiate())
             .then(data => {
               console.log('TransferActions.transfer(): stepUpInitiate() success:', data);
@@ -82,7 +92,7 @@ export function transfer(mock) {
                 type: TRANSFER_ERROR,
                 payload: {
                   message: errorMessage,
-                  code: err.response.status
+                  code: statusCode
                 }
               });
             })
@@ -99,13 +109,13 @@ export function transfer(mock) {
               });
             });
         } else {
-          const errorMessage = `${err.message}. ${err.response.data.code}`;
+          const errorMessage = `${err.message}. ${errorBody(err).code}`;
           console.log('TransferActions.transfer() error:', errorMessage);
           dispatch({
             type: TRANSFER_ERROR,
             payload: {
               message: errorMessage,
-              code: err.response.status
+              code: statusCode
             }
           });
         }
@@ -113,7 +123,7 @@ export function transfer(mock) {
 
       });
     })
-    // catch Auth.currentSession() error
+    // catch fetchAuthSession() error
     .catch((err) => {
       dispatch({
         type: TRANSFER_ERROR,
@@ -146,51 +156,46 @@ export function info(mock) {
       return;
     }
 
-    Auth.currentSession()
-    .then((session) => {
-      const accessToken = session.getAccessToken().getJwtToken();
-      const idToken = session.getIdToken().getJwtToken();
-      return {accessToken, idToken};
-    })
+    getSessionTokens()
     .then((tokens) => {
       const { accessToken } = tokens;
 
       const apiName = config.REST_API_ENDPOINTS[0].name;
-      const path = 'info';
-      const myInit = {
+      const path = '/info';
+      const options = {
         headers: {
           Authorization: `Bearer ${accessToken}`
-        },
-        responseType: 'json', // options are: 'arraybuffer', 'document', 'json', 'text', 'stream'
-        response: true // OPTIONAL (return the entire Axios response object instead of only response.data)
+        }
       };
       // API call
-      API.get(apiName, path, myInit)
+      get({ apiName, path, options }).response
+      // the response body is parsed as JSON (Amplify v4 responseType: 'json')
+      .then(({ body }) => body.json())
       // handle API success
-      .then((response) => {
-        console.log('TransferActions.info(): response received', response);
+      .then((data) => {
+        console.log('TransferActions.info(): response received', data);
 
         dispatch({
           type: INFO_SUCCESS,
           payload: {
-            data: response.data
+            data: data
           }
         });
 
       })
-      // catch API.post() error
+      // catch get() error
       .catch((err) => {
-        const errorMessage = `${err.message}. ${err.response.data.code}`;
+        const errorMessage = `${err.message}. ${errorBody(err).code}`;
         dispatch({
           type: INFO_ERROR,
           payload: {
             message: errorMessage,
-            code: err.response.status
+            code: errorStatusCode(err)
           }
         });
       });
     })
-    // catch Auth.currentSession() error
+    // catch fetchAuthSession() error
     .catch((err) => {
       dispatch({
         type: INFO_ERROR,

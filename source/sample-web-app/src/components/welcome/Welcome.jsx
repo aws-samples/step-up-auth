@@ -3,9 +3,8 @@
 
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { Auth } from 'aws-amplify';
+import { getCurrentUser, fetchAuthSession, updateUserAttributes } from 'aws-amplify/auth';
 import { Segment, Header, Label, Button } from 'semantic-ui-react';
-import _ from 'lodash';
 
 class Welcome extends Component {
   constructor(props) {
@@ -29,7 +28,7 @@ class Welcome extends Component {
   componentDidMount() {
     // we have previously logged in and we are being redirected again.
     // onHubCapsule() won't fire in this case. So lets invoke validateSession()
-    if (_.isUndefined(this.props.authenticated) || this.props.authenticated === false) {
+    if (this.props.authenticated === undefined || this.props.authenticated === false) {
       this.validateUserSession();
     }
 
@@ -37,13 +36,13 @@ class Welcome extends Component {
   }
 
   componentWillUnmount() {
-    if (!_.isUndefined(this.interval)) {
+    if (this.interval !== undefined) {
       clearInterval(this.interval);
     }
   }
 
   startSessionIdleCount(startTime) {
-    if (!_.isUndefined(this.interval)) {
+    if (this.interval !== undefined) {
       clearInterval(this.interval);
     }
 
@@ -53,24 +52,26 @@ class Welcome extends Component {
   }
 
   validateUserSession() {
-    Auth.currentAuthenticatedUser()
+    getCurrentUser()
       .then(currentAuthUser => {
-        console.log('Welcome.validateUserSession():Auth.currentAuthenticatedUser() currentAuthUser:', currentAuthUser);
-        // grab the user session
-        Auth.userSession(currentAuthUser)
+        console.log('Welcome.validateUserSession():getCurrentUser() currentAuthUser:', currentAuthUser);
+        // grab the user session (fetchAuthSession() refreshes expired tokens)
+        fetchAuthSession()
           .then(session => {
-            console.log('Welcome.validateUserSession():Auth.userSession() session:', session);
-            // finally invoke isValid() method on session to check if auth tokens are valid
+            console.log('Welcome.validateUserSession():fetchAuthSession() session:', session);
+            // tokens are only present when the session is valid
             // if tokens have expired, lets call "logout"
             // otherwise, dispatch AUTH_USER success action and by-pass login screen
-            if (session.isValid()) {
+            if (session && session.tokens) {
               // fire user is authenticated
               console.log('user session is valid!');
 
+              // the JWT objects expose the decoded claims as .payload (same as Amplify v4).
+              // Amplify v6 does not expose the refresh token.
               this.setState({
-                accessToken: session.accessToken,
-                idToken: session.idToken,
-                refreshToken: session.refreshToken,
+                accessToken: session.tokens.accessToken,
+                idToken: session.tokens.idToken,
+                refreshToken: '',
                 validating: false
               });
 
@@ -80,7 +81,7 @@ class Welcome extends Component {
               // lets start idle timer count
               // start time is retrieved from iat claim
               // iat = time when token was issued
-              const startTime = session.accessToken.payload.iat * 1000;
+              const startTime = session.tokens.accessToken.payload.iat * 1000;
 
               this.startSessionIdleCount(startTime);
             } else {
@@ -109,7 +110,7 @@ class Welcome extends Component {
               validating: false
             });
 
-            console.error('Welcome.validateUserSession():Auth.userSession() errorMessage:', errorMessage);
+            console.error('Welcome.validateUserSession():fetchAuthSession() errorMessage:', errorMessage);
           });
       })
       .catch(err => {
@@ -123,12 +124,12 @@ class Welcome extends Component {
           validating: false
         });
 
-        console.error('Welcome.validateUserSession():Auth.currentAuthenticatedUser() errorMessage:', errorMessage);
+        console.error('Welcome.validateUserSession():getCurrentUser() errorMessage:', errorMessage);
       });
   }
 
   dumpToken(token) {
-    if (_.isNull(token) || _.isUndefined(token)) {
+    if (token == null) {
       return null;
     }
 
@@ -151,20 +152,20 @@ class Welcome extends Component {
 
   handleUpdateAttributes(event) {
     console.log('Welcome.handleUpdateAttributes() called', event);
-    Auth.currentAuthenticatedUser()
+    getCurrentUser()
       .then(user => {
-        console.log('Welcome.handleUpdateAttributes() Auth.currentAuthenticatedUser() result:', user);
+        console.log('Welcome.handleUpdateAttributes() getCurrentUser() result:', user);
 
-        Auth.updateUserAttributes(user, { 'custom:is_admin': '0' })
+        updateUserAttributes({ userAttributes: { 'custom:is_admin': '0' } })
           .then(result => {
-            console.log('Welcome.handleUpdateAttributes() Auth.updateUserAttributes result:', result);
+            console.log('Welcome.handleUpdateAttributes() updateUserAttributes result:', result);
           })
           .catch(err => {
-            console.log('Welcome.handleUpdateAttributes() Auth.updateUserAttributes error:', err);
+            console.log('Welcome.handleUpdateAttributes() updateUserAttributes error:', err);
           });
       })
       .catch(err => {
-        console.log('Welcome.handleUpdateAttributes() Auth.currentAuthenticatedUser() error:', err);
+        console.log('Welcome.handleUpdateAttributes() getCurrentUser() error:', err);
       });
   }
 

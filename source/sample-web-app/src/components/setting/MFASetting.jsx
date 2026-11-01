@@ -2,8 +2,15 @@
 // SPDX-License-Identifier: MIT-0
 
 import React, { Component } from 'react';
-import QRCode from 'qrcode.react';
-import { Auth } from 'aws-amplify';
+// qrcode.react v4 has no default export; QRCodeCanvas renders the same <canvas> as v3
+import { QRCodeCanvas as QRCode } from 'qrcode.react';
+import {
+  getCurrentUser,
+  setUpTOTP,
+  verifyTOTPSetup,
+  updateMFAPreference,
+  fetchMFAPreference
+} from 'aws-amplify/auth';
 import { Segment, Header, Form, Radio, Label, Container, Button } from 'semantic-ui-react';
 
 import "./MFASetting.css";
@@ -67,25 +74,26 @@ class MFASetting extends Component {
   }
 
   setSoftwareTokenSetting() {
-    Auth.currentAuthenticatedUser().then(user => {
-      console.log('MFASetting.setOtpMfaSetting() Auth.currentAuthenticatedUser() result:', user);
-      Auth.setupTOTP(user).then((code) => {
+    getCurrentUser().then(user => {
+      console.log('MFASetting.setOtpMfaSetting() getCurrentUser() result:', user);
+      setUpTOTP().then((totpSetupDetails) => {
+        const code = totpSetupDetails.sharedSecret;
         const qrCodeString = `otpauth://totp/AWSCognito:${user.username}?secret=${code}&issuer=AWSCognito`;
-        console.log('MFASetting.setSoftwareTokenSetting() Auth.setupTOTP() qrCodeString:', qrCodeString);
+        console.log('MFASetting.setSoftwareTokenSetting() setUpTOTP() qrCodeString:', qrCodeString);
         this.setState({
           qrCodeString: qrCodeString,
           softwareTokenError: false
         });
       })
       .catch(err => {
-        console.log('MFASetting.setSoftwareTokenSetting() Auth.setupTOTP() error:', err);
+        console.log('MFASetting.setSoftwareTokenSetting() setUpTOTP() error:', err);
         this.setState({
           softwareTokenError: true
         });
       });
     })
     .catch(err => {
-      console.log('MFASetting.setOtpMfaSetting() Auth.currentAuthenticatedUser() error:', err);
+      console.log('MFASetting.setOtpMfaSetting() getCurrentUser() error:', err);
       this.setState({
         softwareTokenError: true
       });
@@ -93,10 +101,10 @@ class MFASetting extends Component {
   }
 
   verifySoftwareTokenSetting(challengeAnswer) {
-    Auth.currentAuthenticatedUser().then(user => {
-      console.log('MFASetting.verifySoftwareTokenSetting() Auth.currentAuthenticatedUser() result:', user);
-      Auth.verifyTotpToken(user, challengeAnswer).then((resp) => {
-        console.log('MFASetting.verifySoftwareTokenSetting() Auth.verifyTotpToken() result:', resp);
+    getCurrentUser().then(user => {
+      console.log('MFASetting.verifySoftwareTokenSetting() getCurrentUser() result:', user);
+      verifyTOTPSetup({ code: challengeAnswer }).then((resp) => {
+        console.log('MFASetting.verifySoftwareTokenSetting() verifyTOTPSetup() result:', resp);
 
         this.setState({
           softwareTokenError: false,
@@ -105,7 +113,7 @@ class MFASetting extends Component {
 
       }).catch( err => {
         // Token is not verified
-        console.log('MFASetting.verifySoftwareTokenSetting() Auth.verifyTotpToken() error:', err);
+        console.log('MFASetting.verifySoftwareTokenSetting() verifyTOTPSetup() error:', err);
         this.setState({
           softwareTokenError: true,
           softwareTokenVerified: false
@@ -113,7 +121,7 @@ class MFASetting extends Component {
       });
     })
     .catch(err => {
-      console.log('MFASetting.verifySoftwareTokenSetting() Auth.currentAuthenticatedUser() error:', err);
+      console.log('MFASetting.verifySoftwareTokenSetting() getCurrentUser() error:', err);
       this.setState({
         softwareTokenError: true,
         softwareTokenVerified: false
@@ -122,18 +130,28 @@ class MFASetting extends Component {
   }
 
   setPreferredMfaSetting(type) {
-    Auth.currentAuthenticatedUser().then(user => {
-      console.log('MFASetting.setPreferredMfaSetting() Auth.currentAuthenticatedUser() result:', user);
+    // Amplify v4 setPreferredMFA(user, 'TOTP' | 'SMS' | 'NOMFA') mapped to v6 updateMFAPreference()
+    let mfaPreference;
+    if (type === 'TOTP') {
+      mfaPreference = { totp: 'PREFERRED' };
+    } else if (type === 'SMS') {
+      mfaPreference = { sms: 'PREFERRED' };
+    } else {
+      mfaPreference = { sms: 'DISABLED', totp: 'DISABLED' };
+    }
 
-      Auth.setPreferredMFA(user, type).then((data) => {
-        console.log('MFASetting.setPreferredMfaSetting() Auth.setPreferredMFA() result:', data);
+    getCurrentUser().then(user => {
+      console.log('MFASetting.setPreferredMfaSetting() getCurrentUser() result:', user);
+
+      updateMFAPreference(mfaPreference).then((data) => {
+        console.log('MFASetting.setPreferredMfaSetting() updateMFAPreference() result:', data);
         this.setState({
           preferredMfaType: type,
           preferredMfaError: false
         });
       })
       .catch(err => {
-        console.log('MFASetting.setPreferredMfaSetting() Auth.setPreferredMFA() error:', err);
+        console.log('MFASetting.setPreferredMfaSetting() updateMFAPreference() error:', err);
         this.setState({
           preferredMfaType: type,
           preferredMfaError: true
@@ -141,7 +159,7 @@ class MFASetting extends Component {
       });
     })
     .catch(err => {
-      console.log('MFASetting.setPreferredMfaSetting() Auth.currentAuthenticatedUser() error:', err);
+      console.log('MFASetting.setPreferredMfaSetting() getCurrentUser() error:', err);
       this.setState({
         preferredMfaType: type,
         preferredMfaError: true
@@ -150,23 +168,20 @@ class MFASetting extends Component {
   }
 
   getCurrentMfaSetting() {
-    Auth.currentAuthenticatedUser()
+    getCurrentUser()
       .then(user => {
-        console.log('MFASetting.getCurrentMfaSetting() Auth.currentAuthenticatedUser() result:', user);
+        console.log('MFASetting.getCurrentMfaSetting() getCurrentUser() result:', user);
 
-        // Will retrieve the current mfa type from cache
-        Auth.getPreferredMFA(user,{
-          // Optional, by default is false.
-          // If set to true, it will get the MFA type from server side instead of from local cache.
-          bypassCache: true
-        }).then((data) => {
-          console.log('MFASetting.getCurrentMfaSetting() Auth.getPreferredMFA(): current preferred MFA type is: ' + data);
-          if (data === 'SMS_MFA') {
+        // fetchMFAPreference() always reads the MFA settings from Cognito (no local cache)
+        fetchMFAPreference().then((data) => {
+          const preferred = data && data.preferred;
+          console.log('MFASetting.getCurrentMfaSetting() fetchMFAPreference(): current preferred MFA type is: ' + preferred);
+          if (preferred === 'SMS') {
             this.setState({
               preferredMfaType: 'SMS',
               preferredMfaError: false
             });
-          } else if (data === 'SOFTWARE_TOKEN_MFA' ) {
+          } else if (preferred === 'TOTP' ) {
             this.setState({
               preferredMfaType: 'TOTP',
               preferredMfaError: false
@@ -180,7 +195,7 @@ class MFASetting extends Component {
         });
       })
       .catch(err => {
-        console.log('MFASetting.getCurrentMfaSetting() Auth.currentAuthenticatedUser() error:', err);
+        console.log('MFASetting.getCurrentMfaSetting() getCurrentUser() error:', err);
         this.setState({
           preferredMfaError: true
         });

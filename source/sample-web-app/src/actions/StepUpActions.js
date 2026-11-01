@@ -1,7 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { Auth, API } from "aws-amplify";
+import { fetchAuthSession } from "aws-amplify/auth";
+import { post } from "aws-amplify/api";
 
 import {
   STEP_UP_ERROR,
@@ -9,6 +10,23 @@ import {
   STEP_UP_COMPLETED,
   STEP_UP_CLEAR } from "./Types";
 import config from "../config";
+
+// Current access and id tokens as JWT strings (fetchAuthSession() refreshes
+// expired tokens). Rejects when there is no signed-in user, like the Amplify v4
+// currentSession() did.
+export function getSessionTokens() {
+  return fetchAuthSession()
+    .then((session) => {
+      const tokens = session && session.tokens;
+      if (!tokens || !tokens.accessToken || !tokens.idToken) {
+        throw new Error("No current user");
+      }
+      return {
+        accessToken: tokens.accessToken.toString(),
+        idToken: tokens.idToken.toString()
+      };
+    });
+}
 
 // Clean store
 export function clearstepUp() {
@@ -22,7 +40,6 @@ export function clearstepUp() {
 export function stepUpInitiate(mock) {
   return (dispatch) => {
     console.log("StepUpActions.stepUpInitiate(): mock:", mock || false);
-    // eslint-disable-next-line no-undef
     return new Promise((resolve, reject) => {
 
       if (mock) {
@@ -35,22 +52,21 @@ export function stepUpInitiate(mock) {
         return;
       }
 
-      Auth.currentSession()
-        .then((session) => {
-          const accessToken = session.getAccessToken().getJwtToken();
-          const idToken = session.getIdToken().getJwtToken();
-          return {accessToken, idToken};
-        })
+      getSessionTokens()
         .then((tokens) => {
           const { accessToken, idToken } = tokens;
           // API call
-          API.post(config.REST_API_ENDPOINTS[0].name, "initiate-auth", {
-            headers: {
-              Identification: `Bearer ${idToken}`,
-              Authorization: `Bearer ${accessToken}`,
-            },
-            response: true // OPTIONAL (return the entire Axios response object instead of only response.data)
-          })
+          post({
+            apiName: config.REST_API_ENDPOINTS[0].name,
+            path: "/initiate-auth",
+            options: {
+              headers: {
+                Identification: `Bearer ${idToken}`,
+                Authorization: `Bearer ${accessToken}`,
+              }
+            }
+          }).response
+          .then(({ statusCode, body }) => body.json().then((data) => ({ statusCode, data })))
           // handle API success
           .then((response) => {
             console.log("StepUpActions.stepUpInitiate(): response:", response);
@@ -79,10 +95,9 @@ export function stepUpInitiate(mock) {
               resolve(true); // resolve with dummy value
             }
           })
-          // catch API.post() error
+          // catch post() error
           .catch((err) => {
             console.log("StepUpActions.stepUpInitiate(): error response:", err);
-            // const errorMessage = `${err.message}. ${err.response.data}`;
             dispatch({
               type: STEP_UP_ERROR,
               payload: {
@@ -93,7 +108,7 @@ export function stepUpInitiate(mock) {
             reject(false); // reject with dummy value
           });
         })
-        // catch Auth.currentSession() error
+        // catch fetchAuthSession() error
         .catch((err) => {
           console.log("StepUpActions.stepUpInitiate(): error response:", err);
           dispatch({
@@ -124,30 +139,29 @@ export function stepUpRespondToChallenge(mock, stepUpType, challengeResponse) {
       return;
     }
 
-    Auth.currentSession()
-      .then((session) => {
-        const accessToken = session.getAccessToken().getJwtToken();
-        const idToken = session.getIdToken().getJwtToken();
-        return {accessToken, idToken};
-      })
+    getSessionTokens()
       .then((tokens) => {
         const { accessToken, idToken } = tokens;
         // API call
-        API.post(config.REST_API_ENDPOINTS[0].name, "respond-to-challenge", {
-          headers: {
-            Identification: `Bearer ${idToken}`,
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: {
-            'step-up-type': stepUpType,
-            'challenge-response': challengeResponse
-          },
-          response: true // OPTIONAL (return the entire Axios response object instead of only response.data)
-        })
+        post({
+          apiName: config.REST_API_ENDPOINTS[0].name,
+          path: "/respond-to-challenge",
+          options: {
+            headers: {
+              Identification: `Bearer ${idToken}`,
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: {
+              'step-up-type': stepUpType,
+              'challenge-response': challengeResponse
+            }
+          }
+        }).response
+        .then(({ body }) => body.json())
         // handle API success
         .then((response) => {
           console.log("StepUpActions.stepUpRespondToChallenge(): response:", response);
-          const successMessage = `${response.details}`;
+          const successMessage = `${response && response.details}`;
           dispatch({
             type: STEP_UP_COMPLETED,
             payload: {
@@ -156,10 +170,9 @@ export function stepUpRespondToChallenge(mock, stepUpType, challengeResponse) {
             },
           });
         })
-        // catch API.post() error
+        // catch post() error
         .catch((err) => {
           console.log("StepUpActions.stepUpRespondToChallenge(): error response:", err);
-          // const errorMessage = `${err.message}. ${err.response.data}`;
           dispatch({
             type: STEP_UP_ERROR,
             payload: {
@@ -169,7 +182,7 @@ export function stepUpRespondToChallenge(mock, stepUpType, challengeResponse) {
           });
         });
       })
-      // catch Auth.currentSession() error
+      // catch fetchAuthSession() error
       .catch((err) => {
         dispatch({
           type: STEP_UP_ERROR,

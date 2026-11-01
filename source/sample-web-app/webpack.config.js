@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-/* eslint-env node */
+// node globals for this file are set in eslint.config.mjs
 const webpack = require('webpack');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const CopyPlugin = require('copy-webpack-plugin');
@@ -12,7 +12,7 @@ const path = require('path');
 // CSS optimizers for production
 const autoprefixer = require("autoprefixer");
 const TerserJSPlugin = require('terser-webpack-plugin');
-const OptimizeCSSAssetsPlugin = require('optimize-css-assets-webpack-plugin');
+const CssMinimizerPlugin = require('css-minimizer-webpack-plugin');
 
 // disambiguates webpack.config.js between development and production builds
 // export a function instead of configuration object to determine 'development'
@@ -69,13 +69,7 @@ module.exports = env => {
     resolve: {
       extensions: [
         '.js', '.jsx'
-      ],
-      // https://github.com/angular/angular-cli/issues/20819
-      // graphql/amplify requires polly fills for node modules in webpack 5
-      fallback: {
-        'stream': require.resolve('stream-browserify'),
-        'crypto': require.resolve('crypto-browserify')
-      }
+      ]
     },
 
     // refer to https://webpack.js.org/configuration/stats/#statschildren
@@ -100,7 +94,7 @@ module.exports = env => {
       //   }
       // },
       // CSS optimizers for production
-      minimizer: DEV_MODE ? [] : [new TerserJSPlugin({}), new OptimizeCSSAssetsPlugin({})],
+      minimizer: DEV_MODE ? [] : [new TerserJSPlugin(), new CssMinimizerPlugin()],
       minimize: ! DEV_MODE,
     },
 
@@ -167,37 +161,6 @@ module.exports = env => {
 						}
           ]
         },
-        {
-          test: /\.scss$/,
-          // include : APP_PATH,
-          use: [
-            {
-              loader: MiniCssExtractPlugin.loader,
-              // options: {
-              //   // only enable hot in development
-              //   // hmr: DEV_MODE,
-              //   // if hmr does not work, this is a forceful method.
-              //   // reloadAll: DEV_MODE
-              // },
-            },
-            {
-              loader: 'css-loader',
-              options: {
-              //   sourceMap: DEV_MODE,
-              //   modules: false
-                // https://github.com/webpack-contrib/css-loader#exportonlylocals
-                exportOnlyLocals: true,
-              },
-            },
-            {
-							loader:  "postcss-loader",
-							options: postcssOpts
-						},
-            {
-              loader: 'sass-loader'
-            }
-          ]
-        },
         /*
          * old webpack v4
          */
@@ -254,6 +217,9 @@ module.exports = env => {
 
     // refer to https://webpack.js.org/configuration/dev-server/#devserver
     devServer: {
+      // loopback only: the dev server must not be reachable from other machines
+      host: '127.0.0.1',
+      port: 8080,
       devMiddleware: {
         writeToDisk: true
       },

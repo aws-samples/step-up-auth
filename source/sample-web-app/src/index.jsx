@@ -5,7 +5,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from "react-router-dom";
 import { Provider } from 'react-redux';
-import Amplify from 'aws-amplify';
+import { Amplify } from 'aws-amplify';
 import store from './store';
 import App from './components/App';
 import AppHeader from './components/header/AppHeader';
@@ -28,17 +28,26 @@ console.log('  REST_API_ENDPOINTS: ', config.REST_API_ENDPOINTS);
 /* eslint-enable no-undef */
 
 
-// AWS SDK & AWS Amplify Configuration
-// https://aws-amplify.github.io/amplify-js/media/api_guide#manual-configuration
+// AWS Amplify (v6) Configuration
+// https://docs.amplify.aws/gen1/javascript/tools/libraries/configure-categories/
+// The Cognito region is derived from the user pool id. The REST API URL is
+// endpoint + path, so a trailing slash on the endpoint is removed.
 Amplify.configure({
   Auth: {
-    identityPoolId: config.AWS_COGNITO_IDENTITY_POOL_ID, // REQUIRED - Amazon Cognito Identity Pool ID
-    region: config.AWS_REGION, // REQUIRED - Amazon Cognito Region
-    userPoolId: config.AWS_COGNITO_USER_POOL_ID, //OPTIONAL - Amazon Cognito User Pool ID
-    userPoolWebClientId: config.AWS_COGNITO_CLIENT_ID //OPTIONAL - Amazon Cognito Web Client ID
+    Cognito: {
+      userPoolId: config.AWS_COGNITO_USER_POOL_ID, // Amazon Cognito User Pool ID
+      userPoolClientId: config.AWS_COGNITO_CLIENT_ID, // Amazon Cognito Web Client ID
+      // OPTIONAL - Amazon Cognito Identity Pool ID (only when set)
+      ...(config.AWS_COGNITO_IDENTITY_POOL_ID ? { identityPoolId: config.AWS_COGNITO_IDENTITY_POOL_ID } : {})
+    }
   },
   API: {
-    endpoints: config.REST_API_ENDPOINTS
+    REST: {
+      [config.REST_API_ENDPOINTS[0].name]: {
+        endpoint: config.REST_API_ENDPOINTS[0].endpoint.replace(/\/+$/, ''),
+        region: config.AWS_REGION
+      }
+    }
   }
 });
 
