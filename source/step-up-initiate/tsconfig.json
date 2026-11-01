@@ -6,7 +6,8 @@
   "compilerOptions": {
     "module": "commonjs",
     "esModuleInterop": true,
-    "target": "es6",
+    "target": "ES2022",
+    "skipLibCheck": true,
     "noImplicitAny": true,
     "moduleResolution": "node",
     "experimentalDecorators": true,
@@ -27,14 +28,14 @@
     ],
     "types": [
       "node",
-      "@types/jest"
+      "jest"
     ],
     "strict": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
     // "strictBindCallApply": true,
     "lib": [
-      "es6",
+      "ES2022",
       "DOM"
     ]
   },

@@ -42,14 +42,18 @@ const BASE_CONTEXT: Context = {
 };
 
 describe('handler', () => {
-  let sendMock: jest.Mock;
+  // Jest 30 types an untyped jest.Mock as (...args: unknown[]) => unknown,
+  // which rejects mockResolvedValueOnce(<value>); type send() loosely here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type SendMock = jest.Mock<(...args: any[]) => any>;
+  let sendMock: SendMock;
 
   beforeEach(() => {
     sendMock = (
       (jest.spyOn(
         CognitoIdentityProviderClient.prototype,
         'send'
-        ) as unknown) as jest.Mock).mockClear();
+        ) as unknown) as SendMock).mockClear();
   });
 
   it('returns the correct OPTIONS response', async () => {
@@ -168,13 +172,13 @@ describe('handler', () => {
         });
 
         expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetUserCommand);
-        expect(sendMock.mock.calls[0][0].input.AccessToken).toEqual('xyz');
+        expect(sendMock.mock.calls[0][0].input.AccessToken).toBe('xyz');
 
         expect(sendMock.mock.calls[1][0]).toBeInstanceOf(
           GetUserAttributeVerificationCodeCommand
         );
-        expect(sendMock.mock.calls[1][0].input.AccessToken).toEqual('xyz');
-        expect(sendMock.mock.calls[1][0].input.AttributeName).toEqual(
+        expect(sendMock.mock.calls[1][0].input.AccessToken).toBe('xyz');
+        expect(sendMock.mock.calls[1][0].input.AttributeName).toBe(
           'phone_number'
         );
 
@@ -233,7 +237,7 @@ describe('handler', () => {
         });
 
         expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetUserCommand);
-        expect(sendMock.mock.calls[0][0].input.AccessToken).toEqual('xyz');
+        expect(sendMock.mock.calls[0][0].input.AccessToken).toBe('xyz');
         expect(sendMock).toHaveBeenCalledTimes(1);
       }
     );
@@ -293,7 +297,7 @@ describe('handler', () => {
         });
 
         expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetUserCommand);
-        expect(sendMock.mock.calls[0][0].input.AccessToken).toEqual('xyz');
+        expect(sendMock.mock.calls[0][0].input.AccessToken).toBe('xyz');
         expect(sendMock).toHaveBeenCalledTimes(1);
       }
     );
