@@ -1,8 +1,9 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import * as cdk from "@aws-cdk/core";
-import * as dynamodb from '@aws-cdk/aws-dynamodb';
+import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import { Construct } from 'constructs';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface DynamoDbProps extends cdk.StackProps {
@@ -15,7 +16,7 @@ export class DynamoDbStack extends cdk.Stack {
   public readonly tokenTable: dynamodb.Table;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
-  constructor(scope: cdk.Construct, id: string, props: DynamoDbProps) {
+  constructor(scope: Construct, id: string, props: DynamoDbProps) {
     super(scope, id, props);
 
     // ----------------------------------------

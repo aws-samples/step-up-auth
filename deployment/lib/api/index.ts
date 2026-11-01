@@ -1,9 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import * as cdk from '@aws-cdk/core';
-import * as cognito from '@aws-cdk/aws-cognito';
-import * as iam from '@aws-cdk/aws-iam';
+import * as cdk from 'aws-cdk-lib';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { Construct } from 'constructs';
 
 import { LambdaStack } from './lambda-stack';
 import { ApiGatewayStack } from './api-gateway-stack';
@@ -17,12 +18,17 @@ export interface ApiProps {
   readonly apigatewayLambdaAuthorizerRole: iam.Role;
   readonly apigatewayExecutionRole: iam.Role;
   readonly lambdaExecutionRole: iam.Role;
+  /**
+   * Root folder that holds the Lambda projects (<assetRoot>/<project>/build/compressed/*.zip).
+   * @default path.join(__dirname, '..', '..', '..', 'source')
+   */
+  readonly assetRoot?: string;
 }
 
-export class Api extends cdk.Construct {
+export class Api extends Construct {
   public readonly apiUrl?: string;
 
-  constructor(scope: cdk.Construct, id: string, props: ApiProps) {
+  constructor(scope: Construct, id: string, props: ApiProps) {
     super(scope, id);
 
     // create Lambda Stack
@@ -32,7 +38,8 @@ export class Api extends cdk.Construct {
       nodeEnvironment: props.nodeEnvironment,
       cognitoUserPool: props.userPool,
       cognitoIssuer: props.cognitoIssuer,
-      lambdaExecutionRole: props.lambdaExecutionRole
+      lambdaExecutionRole: props.lambdaExecutionRole,
+      assetRoot: props.assetRoot
     });
 
     // create API Gateway Stack
@@ -48,6 +55,7 @@ export class Api extends cdk.Construct {
       cognitoIssuer: props.cognitoIssuer,
       apigatewayLambdaAuthorizerRole: props.apigatewayLambdaAuthorizerRole,
       apigatewayExecutionRole: props.apigatewayExecutionRole,
+      assetRoot: props.assetRoot
     });
     this.apiUrl = apiGatewayStack.apiUrl;
   }

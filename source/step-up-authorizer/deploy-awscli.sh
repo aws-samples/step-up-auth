@@ -84,7 +84,7 @@ if [ $? -ne 0 ]; then
         --region ${AWS_REGION} \
         --function-name ${module_name} \
         --zip-file fileb://"${module_zip_path}" \
-        --runtime nodejs12.x \
+        --runtime nodejs24.x \
         --tracing-config Mode=PassThrough \
         --timeout 30 \
         --memory-size 128 \

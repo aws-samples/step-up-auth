@@ -1,9 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import * as cdk from '@aws-cdk/core';
-import * as s3 from '@aws-cdk/aws-s3';
-import { CfnOutput } from "@aws-cdk/core";
+import * as cdk from 'aws-cdk-lib';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import { CfnOutput } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface S3Props extends cdk.StackProps {
@@ -13,7 +14,7 @@ export interface S3Props extends cdk.StackProps {
 export class S3Stack extends cdk.Stack {
   public readonly bucket: s3.Bucket;
 
-  constructor(scope: cdk.Construct, id: string, props: S3Props) {
+  constructor(scope: Construct, id: string, props: S3Props) {
     super(scope, id, props);
 
     this.bucket = new s3.Bucket(this, 'Bucket', {

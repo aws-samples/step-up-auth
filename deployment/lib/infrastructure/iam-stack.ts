@@ -1,10 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import * as cdk from '@aws-cdk/core';
-import * as iam from '@aws-cdk/aws-iam';
+import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { Construct } from 'constructs';
 
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface IamProps extends cdk.StackProps {}
 
 export class IamStack extends cdk.Stack {
@@ -14,7 +15,7 @@ export class IamStack extends cdk.Stack {
   public readonly smsRole: iam.Role;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
-  constructor(scope: cdk.Construct, id: string, props: IamProps) {
+  constructor(scope: Construct, id: string, props: IamProps) {
     super(scope, id, props);
 
     // ----------------------------------------

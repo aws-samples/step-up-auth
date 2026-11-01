@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT-0
 
 import * as path from 'path';
-import * as cdk from '@aws-cdk/core';
-import * as apigateway from '@aws-cdk/aws-apigateway';
-import * as lambda from '@aws-cdk/aws-lambda';
-import { Asset } from '@aws-cdk/aws-s3-assets';
-import * as cognito from '@aws-cdk/aws-cognito';
-import * as iam from '@aws-cdk/aws-iam';
-import { CfnOutput } from "@aws-cdk/core";
+import * as cdk from 'aws-cdk-lib';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import { Asset } from 'aws-cdk-lib/aws-s3-assets';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { CfnOutput } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
 
 export interface ApiGatewayProps extends cdk.StackProps {
   readonly environmentPrefix?: string;
@@ -21,14 +22,21 @@ export interface ApiGatewayProps extends cdk.StackProps {
   readonly cognitoIssuer: string;
   readonly apigatewayLambdaAuthorizerRole: iam.Role;
   readonly apigatewayExecutionRole: iam.Role;
+  /**
+   * Root folder that holds the Lambda projects (<assetRoot>/<project>/build/compressed/*.zip).
+   * @default path.join(__dirname, '..', '..', '..', 'source')
+   */
+  readonly assetRoot?: string;
 }
 
 export class ApiGatewayStack extends cdk.Stack {
   readonly api: apigateway.RestApi;
   public readonly apiUrl?: string;
 
-  constructor(scope: cdk.Construct, id: string, props: ApiGatewayProps) {
+  constructor(scope: Construct, id: string, props: ApiGatewayProps) {
     super(scope, id, props);
+
+    const assetRoot = props.assetRoot || path.join(__dirname, '..', '..', '..', 'source');
 
     // ----------------------------------------
     //      cognito user pool authorizer
@@ -43,12 +51,12 @@ export class ApiGatewayStack extends cdk.Stack {
     // ----------------------------------------
     // create file assets and upload to S3 as-is
     const stepUpAuthorizerAsset = new Asset(this, 'step-up-auth-authorizer-asset', {
-      path: path.join(__dirname, '..', '..', '..', 'source', 'step-up-authorizer', 'build', 'compressed', 'step-up-auth-authorizer-lambda.zip')
+      path: path.join(assetRoot, 'step-up-authorizer', 'build', 'compressed', 'step-up-auth-authorizer-lambda.zip')
     });
     // create the lambda function
     const stepUpAuthorizerFunc = new lambda.Function(this, 'step-up-auth-authorizer-lambda', {
       code: lambda.Code.fromBucket(stepUpAuthorizerAsset.bucket, stepUpAuthorizerAsset.s3ObjectKey),
-      runtime: lambda.Runtime.NODEJS_16_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,

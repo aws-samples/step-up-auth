@@ -1,10 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import * as cdk from "@aws-cdk/core";
-import * as cognito from "@aws-cdk/aws-cognito";
-import * as iam from '@aws-cdk/aws-iam';
-import { CfnOutput } from "@aws-cdk/core";
+import * as cdk from 'aws-cdk-lib';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import { CfnOutput } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
 
 export interface CognitoProps extends cdk.StackProps {
   readonly smsRole: iam.Role;
@@ -15,7 +16,7 @@ export class CognitoStack extends cdk.Stack {
   public readonly appClient: cognito.UserPoolClient;
   public readonly cognitoIssuer: string;
 
-  constructor(scope: cdk.Construct, id: string, props: CognitoProps) {
+  constructor(scope: Construct, id: string, props: CognitoProps) {
     super(scope, id, props);
 
     // ----------------------------------------

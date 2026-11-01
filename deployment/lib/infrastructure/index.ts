@@ -1,10 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import * as cdk from "@aws-cdk/core";
-import * as cognito from "@aws-cdk/aws-cognito";
-import * as iam from '@aws-cdk/aws-iam';
-import * as dynamodb from '@aws-cdk/aws-dynamodb';
+import * as cdk from 'aws-cdk-lib';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import { Construct } from 'constructs';
 
 import { CognitoStack } from "./cognito-stack";
 import { IamStack } from "./iam-stack";
@@ -15,7 +16,7 @@ export interface InfrastructureProps {
   readonly environmentPrefix?: string;
 }
 
-export class Infrastructure extends cdk.Construct {
+export class Infrastructure extends Construct {
   public readonly cognitoUserPool: cognito.UserPool;
   public readonly cognitoIssuer: string;
   public readonly apigatewayLambdaAuthorizerRole: iam.Role;
@@ -25,7 +26,7 @@ export class Infrastructure extends cdk.Construct {
   public readonly settingTable: dynamodb.Table;
   public readonly tokenTable: dynamodb.Table;
 
-  constructor(scope: cdk.Construct, id: string, props: InfrastructureProps) {
+  constructor(scope: Construct, id: string, props: InfrastructureProps) {
     super(scope, id);
 
     // create IAM Stack
