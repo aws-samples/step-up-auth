@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { v4 as uuidV4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { TokenStatusEnum, TokenChannelTypeEnum } from './types';
 /**
  * Generate random one-time pass-code/password (OTP) of a given length.  OTP
@@ -31,10 +31,7 @@ class Token {
   ttl: number;
 
   constructor(id?: string) {
-    if (typeof id === undefined) {
-      throw Error("id cannot be empty");
-    }
-    this.id = id || uuidV4();
+    this.id = id || randomUUID();
     this.temporaryToken = generateTemporaryToken();
     this.createTimestamp = "";
     this.lastUpdateTimestamp = "";

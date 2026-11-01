@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { v4 as uuidV4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { StepUpStateEnum } from './types';
 
 /**
@@ -17,7 +17,7 @@ class Setting {
    * C-TOR
    */
   constructor(id?: string, stepUpState?: StepUpStateEnum) {
-    this.id = id || uuidV4();
+    this.id = id || randomUUID();
     this.stepUpState = stepUpState || StepUpStateEnum.STEP_UP_NOT_REQUIRED;
     this.createTimestamp = "";
     this.lastUpdateTimestamp = "";
