@@ -107,6 +107,12 @@ module.exports = env => {
           // include : APP_PATH,
           use: {
             loader: 'babel-loader',
+            options: {
+              // Babel 8 preset-react picks the JSX dev transform (jsxDEV) when the Babel env is
+              // "development", and the Babel env comes from BABEL_ENV/NODE_ENV, not from
+              // webpack's --env. Set it from the build mode so production bundles use jsx().
+              envName: DEV_MODE ? 'development' : 'production'
+            }
           }
         },
         // graphql mjs work-around
