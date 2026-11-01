@@ -38,7 +38,7 @@ describe('STChallengeResponder.validate()', () => {
         });
         const stChallengeResponder = new STChallengeResponder(accessToken, challengeResponse, client);
         const promise = stChallengeResponder.validate();
-        await expect(promise).resolves.toEqual( false );
+        await expect(promise).resolves.toBe( false );
       }
     );
   }

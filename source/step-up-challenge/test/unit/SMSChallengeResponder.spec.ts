@@ -38,7 +38,7 @@ describe('SMSChallengeResponder.validate()', () => {
         });
         const smsChallengeResponder = new SMSChallengeResponder(accessToken, challengeResponse, client);
         const promise = smsChallengeResponder.validate();
-        await expect(promise).resolves.toEqual( false );
+        await expect(promise).resolves.toBe( false );
       }
     );
   }
