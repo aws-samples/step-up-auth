@@ -92,7 +92,7 @@ class Authorizer {
    */
   public async isTokenValid(token: string): Promise<boolean> {
     const cognitoToken = new CognitoToken(token);
-    const result = cognitoToken.verify();
+    const result = await cognitoToken.verify('access');
     log.debug(`token verification result: ${result}`);
     return result;
   }

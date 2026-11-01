@@ -36,7 +36,7 @@ class SMSChallengeResponder extends ChallengeResponder {
     log.debug(`SMS validate() called`);
 
     // Check if Challenge Response is valid
-    if (!this.validateChallengeResponse() || !this.validateToken()){
+    if (!this.validateChallengeResponse() || !(await this.validateToken())){
       return false;
     }
 

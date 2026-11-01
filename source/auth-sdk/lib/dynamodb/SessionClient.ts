@@ -88,10 +88,11 @@ class SessionClient extends Client {
    * @param {string} token authorization token value
    * @param {string} referrerUrl api path for which we are initiating the step up auth session
    * @param {StepUpStatusEnum} stepUpStatus enum indicating whether session requires elevated credentials
+   * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token.  When set, ttl never exceeds it
    * @returns {string} session id
    * @throws {CreateException} If DynamoDB operation fails, throw 'Error'
    */
-   public async createSessionWithParams(sessionId?: string, userId?: string, clientId?: string, token?: string, referrerUrl?: string, stepUpStatus?: StepUpStatusEnum): Promise<string> {
+   public async createSessionWithParams(sessionId?: string, userId?: string, clientId?: string, token?: string, referrerUrl?: string, stepUpStatus?: StepUpStatusEnum, tokenExp?: number): Promise<string> {
     // get current timestamp
     const now = new Date();
     // create new rule (or record in db) based on incoming parameters
@@ -99,8 +100,8 @@ class SessionClient extends Client {
     // set timestamps
     session.createTimestamp = now.toISOString();
     session.lastUpdateTimestamp = now.toISOString();
-    // update TTL
-    session.ttl = Math.round(now.getTime() / 1000) + this.sessionTableItemTTLInSeconds;
+    // update TTL (capped at token expiry)
+    session.ttl = this.computeTtl(Math.round(now.getTime() / 1000), tokenExp);
 
     // create the record
     try {
@@ -187,10 +188,11 @@ class SessionClient extends Client {
    * Update session in DynamoDB table
    * @param {Session} session Session object
    * @param {string} lastUpdateTimestamp last update timestamp
+   * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token.  When set, ttl never exceeds it
    * @returns {string} session id
    * @throws {UpdateException} If operation fails, throw 'Error'
    */
-  public async updateSession(session: Session, lastUpdateTimestamp?: string): Promise<string> {
+  public async updateSession(session: Session, lastUpdateTimestamp?: string, tokenExp?: number): Promise<string> {
     // get current timestamp
     const now = new Date();
 
@@ -202,13 +204,13 @@ class SessionClient extends Client {
     // update timestamp
     if (lastUpdateTimestamp !== undefined) {
       record.lastUpdateTimestamp = lastUpdateTimestamp;
-      // update ttl based on lastUpdateTimestamp
+      // update ttl based on lastUpdateTimestamp (capped at token expiry)
       const lastUpdateDate = new Date(lastUpdateTimestamp);
-      record.ttl = Math.round(lastUpdateDate.getTime() / 1000) + this.sessionTableItemTTLInSeconds;
+      record.ttl = this.computeTtl(Math.round(lastUpdateDate.getTime() / 1000), tokenExp);
     } else {
       record.lastUpdateTimestamp = now.toISOString();
-      // update ttl based on current timestamp
-      record.ttl = Math.round(now.getTime() / 1000) + this.sessionTableItemTTLInSeconds;
+      // update ttl based on current timestamp (capped at token expiry)
+      record.ttl = this.computeTtl(Math.round(now.getTime() / 1000), tokenExp);
     }
 
     // update the record
@@ -253,27 +255,29 @@ class SessionClient extends Client {
    * Update session `stepUpStatus` flag
    * @param {string} sessionId session id
    * @param {StepUpStatusEnum} stepUpStatus enum indicating step up auth status
+   * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token.  When set, ttl never exceeds it
    * @returns {string} session id
    * @throws {RecordNotFoundException} If operation fails, throw 'Error'
    */
-  public async updateStepUpStatus(sessionId: string, stepUpStatus: StepUpStatusEnum): Promise<string> {
+  public async updateStepUpStatus(sessionId: string, stepUpStatus: StepUpStatusEnum, tokenExp?: number): Promise<string> {
     // retrieve session object
     const session: Session = await this.getSession(sessionId);
 
     // update attributes
     session.stepUpStatus = stepUpStatus;
 
-    return this.updateSession(session);
+    return this.updateSession(session, undefined, tokenExp);
   }
 
   /**
    * Mark stepUpStatus in DynamoDB session table to STEP_UP_COMPLETED
    * @param {string} sessionId session id
+   * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token.  When set, ttl never exceeds it
    * @return {string} session id
    * @throws {RecordNotFoundException} If session is missing, throw 'Error'
    * @throws {UpdateException} If update operation fails, throw 'Error'
    */
-  public async completeStepUpRequest(sessionId: string): Promise<string> {
+  public async completeStepUpRequest(sessionId: string, tokenExp?: number): Promise<string> {
     // retrieve the request from DynamoDB
     let session: Session = <Session>{};
     try {
@@ -289,13 +293,28 @@ class SessionClient extends Client {
     // update record in DynamoDB
     let updatedSessionId: string = '';
     try {
-      updatedSessionId = await this.updateSession(session);
+      updatedSessionId = await this.updateSession(session, undefined, tokenExp);
     } catch( exp ) {
       const errorMessage: string = `unable to update record in request table for sessionId: ${sessionId}`;
       throw new UpdateException(errorMessage);
     }
 
     return updatedSessionId;
+  }
+
+  /**
+   * Compute the session ttl: base + SESSION_TABLE_ITEM_TTL, capped at the token expiry
+   * so that a session never outlives the access token it was created for (C2b)
+   * @param {number} baseEpochSeconds base timestamp in epoch seconds
+   * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token
+   * @returns {number} ttl in epoch seconds
+   */
+  private computeTtl(baseEpochSeconds: number, tokenExp?: number): number {
+    const ttl = baseEpochSeconds + this.sessionTableItemTTLInSeconds;
+    if (tokenExp !== undefined && tokenExp > 0) {
+      return Math.min(ttl, tokenExp);
+    }
+    return ttl;
   }
 
 }

@@ -23,6 +23,7 @@ class ChallengeResponder {
   protected challengeResponse: string;
   protected client: CognitoIdentityProviderClient;
   protected jtiClaim: string;
+  protected tokenExp: number; // access token `exp` claim.  caps the session ttl
 
   /**
    * C-TOR
@@ -35,16 +36,17 @@ class ChallengeResponder {
     this.challengeResponse = challengeResponse;
     this.client=client;
     this.jtiClaim= jtiClaim || '';
+    this.tokenExp = 0;
   }
 
   /**
   * Generate a response
   * @returns
   */
-  protected validateToken(): boolean {
+  protected async validateToken(): Promise<boolean> {
     log.debug(`validateToken() called`);
 
-    // check if access token is valid
+    // check if access token is valid.  getJtiClaim() throws 'invalid token' for an undecodable token
     const accessToken: CognitoToken = new CognitoToken(this.token!);
     this.jtiClaim = accessToken.getJtiClaim();
     try {
@@ -54,16 +56,17 @@ class ChallengeResponder {
         return false;
       }
 
-      // perform token validation.
-      const isValidToken = this.isTokenValid(accessToken.getToken());
+      // perform token validation (signature, exp, iss, token_use, client id)
+      const isValidToken = await this.isTokenValid(accessToken.getToken());
       if (!isValidToken) {
         log.warn(`access token is invalid.  token validation failed`);
         return false;
       }
 
       // perform expiration time validation.
+      this.tokenExp = accessToken.getExpClaim();
       const d1 = new Date();
-      const d2 = new Date(accessToken.getExpClaim() * 1000);
+      const d2 = new Date(this.tokenExp * 1000);
       const validExpiration = d1.getTime() < d2.getTime();
       if (!validExpiration) {
         log.warn(`access token has expired.  token validation failed`);
@@ -110,8 +113,8 @@ class ChallengeResponder {
       //Update the status value of the current session entry
       retrievedSession.stepUpStatus=newStatus;
       const now = new Date();
-      //Update the session entry in Dynamo
-      client.updateSession(retrievedSession,now.toISOString());
+      //Update the session entry in Dynamo (awaited, so the response is sent after the write lands)
+      await client.updateSession(retrievedSession, now.toISOString(), this.tokenExp);
     } else {
       console.log(`Issue updating Session Table - Record Missing.`);
       return false;
@@ -126,7 +129,7 @@ class ChallengeResponder {
    */
   private async isTokenValid(token: string): Promise<boolean> {
     const cognitoToken = new CognitoToken(token);
-    const result = cognitoToken.verify();
+    const result = await cognitoToken.verify('access');
     log.debug(`token verification result: ${result}`);
     return result;
   }

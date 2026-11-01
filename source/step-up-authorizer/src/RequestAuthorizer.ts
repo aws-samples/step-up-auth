@@ -33,6 +33,7 @@ class RequestAuthorizer extends Authorizer {
   private authorizationHeader: string;
   private idTokenHeader: string;
   private clientId: string; // used when generating sessionId
+  private tokenExp: number; // access token `exp` claim.  caps the session ttl
 
   /**
    * C-TOR
@@ -45,6 +46,7 @@ class RequestAuthorizer extends Authorizer {
 
     this.event = event;
     this.clientId = '';
+    this.tokenExp = 0;
     this.idTokenHeader = TokenHeaderValueEnum.ID_TOKEN_HEADER_VALUE;
     this.authorizationHeader = TokenHeaderValueEnum.AUTHORIZATION_HEADER_VALUE;
 
@@ -116,6 +118,8 @@ class RequestAuthorizer extends Authorizer {
 
     // extract clientId and token.  we store these values in session table when creating new session
     this.clientId = accessToken.getClientIdClaim();
+    // extract token expiry.  a new session's ttl never exceeds it
+    this.tokenExp = accessToken.getExpClaim();
 
     // check if sessionId exists in session
     // - if yes, then check for STATUS field
@@ -138,9 +142,15 @@ class RequestAuthorizer extends Authorizer {
             throw new Error("Unauthorized");
 
           case StepUpStatusEnum.STEP_UP_COMPLETED:
-            return this.generateAllowResponse();
-
           case StepUpStatusEnum.STEP_UP_NOT_REQUIRED:
+            // DynamoDB deletes expired items lazily, so check the ttl here.  An expired
+            // (or ttl-less) session is treated as "no session": break out of the switch
+            // and fall through to the setting check below, which re-creates a
+            // STEP_UP_REQUIRED session (401) for a step-up API (C1, C2)
+            if (!retrievedSession.ttl || retrievedSession.ttl <= Math.floor(Date.now() / 1000)) {
+              log.warn(`session '${sessionId}' with step-up status ${retrievedSession.stepUpStatus} has expired (ttl: ${retrievedSession.ttl}).  treating it as no session`);
+              break;
+            }
             return this.generateAllowResponse();
 
           default:
@@ -206,7 +216,7 @@ class RequestAuthorizer extends Authorizer {
     // are performing step-up auth using `id token`, which doesn't contain these
     // values.
     const client = new SessionClient();
-    const createdSessionId = await client.createSessionWithParams(sessionId, this.principalId, this.clientId, undefined, referrerUrl, StepUpStatusEnum.STEP_UP_REQUIRED);
+    const createdSessionId = await client.createSessionWithParams(sessionId, this.principalId, this.clientId, undefined, referrerUrl, StepUpStatusEnum.STEP_UP_REQUIRED, this.tokenExp);
     return createdSessionId;
   }
 
