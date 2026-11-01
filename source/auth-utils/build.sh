@@ -94,34 +94,33 @@ if [ $? -ne 0 ]; then
   rm -rf /tmp/$$.*
   exit 2
 fi
+# copy package-lock.json so the dist install uses the locked versions
+if [ -f package-lock.json ]; then
+  cp package-lock.json "${module_dist}" > /tmp/$$.cp.log 2>&1
+  if [ $? -ne 0 ]; then
+    echo "cp package-lock.json failed: $?"
+    echo "cp logs:"
+    cat /tmp/$$.cp.log
+    rm -rf /tmp/$$.*
+    exit 2
+  fi
+fi
 
 ## step 3: verify tsc installation
 echo "3 verifying tsc compiler"
 
-# check tsc is installed
-(
-  tsc --version > /tmp/$$.tsc.1.log 2>&1
-  if [ $? -ne 0 ]; then
-    echo "typescript compiler, tsc, is not installed: $?"
-
-    echo "installing tsc"
-    npm install -g typescript > /tmp/$$.tsc-npm-install.log 2>&1
-    if [ $? -ne 0 ]; then
-      echo "npm install tsc failed: $?"
-      echo "npm install tsc logs:"
-      cat /tmp/$$.tsc-npm-install.log
-      rm -rf /tmp/$$.*
-      exit 2
-    fi
-  fi
-)
-if [ $? -ne 0 ]; then
+# use the project-local tsc (typescript devDependency); never install it globally
+module_tsc="${WORKING_DIR}/node_modules/.bin/tsc"
+if [ ! -x "${module_tsc}" ]; then
+  echo "typescript compiler not found: ${module_tsc}"
+  echo "run 'npm ci' in ${WORKING_DIR} before running the build"
+  rm -rf /tmp/$$.*
   exit 2
 fi
 
 # verify tsc installation
 (
-  tsc --version > /tmp/$$.tsc.2.log 2>&1
+  "${module_tsc}" --version > /tmp/$$.tsc.2.log 2>&1
   if [ $? -ne 0 ]; then
     echo "unable to verify tsc installation: $?"
     echo "tsc error logs:"
@@ -214,7 +213,7 @@ echo "6 copying transpiled source to ${module_dist}"
     for module_tgz in ${module_tgzs}; do
       (
         cd "${WORKING_DIR}/${module_dist}"
-        npm install --production "${WORKING_DIR}/${module_zip}/${module_tgz}" > "/tmp/$$.${module_tgz}-npm-install.log" 2>&1
+        npm install --omit=dev "${WORKING_DIR}/${module_zip}/${module_tgz}" > "/tmp/$$.${module_tgz}-npm-install.log" 2>&1
         if [ $? -ne 0 ]; then
           echo "npm install failed for ${module_tgz}: $?"
           echo "npm install logs:"
@@ -234,7 +233,7 @@ echo "6 copying transpiled source to ${module_dist}"
 
   # change to dist folder and start the npm build
   cd "${WORKING_DIR}/${module_dist}"
-  npm install --production > /tmp/$$.npm-install-1.log 2>&1
+  npm install --omit=dev > /tmp/$$.npm-install-1.log 2>&1
   if [ $? -ne 0 ]; then
       echo "npm install failed: $?"
       echo "npm install logs:"
