@@ -34,8 +34,6 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/jest": "^30.0.0",
-    "@types/jsonwebtoken": "^8.5.8",
-    "@types/jwk-to-pem": "^2.0.1",
     "@types/node": "^24.19.2",
     "eslint": "^9.39.5",
     "eslint-plugin-jest": "^29.17.0",
@@ -47,10 +45,8 @@
     "typescript-eslint": "^8.72.1"
   },
   "dependencies": {
-    "axios": "^0.26.1",
+    "aws-jwt-verify": "^5.2.1",
     "config": "^4.4.2",
-    "jsonwebtoken": "^9.0.0",
-    "jwk-to-pem": "^2.0.5",
     "jwt-decode": "^4.0.0",
     "winston": "^3.19.0"
   },

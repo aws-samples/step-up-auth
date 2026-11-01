@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: MIT-0
 
 import { jwtDecode, JwtPayload } from 'jwt-decode';
-import * as jwt from 'jsonwebtoken';
 import * as crypto from "crypto";
-import jwkToPem from 'jwk-to-pem';
-import axios from 'axios';
-import { TokenException } from './exception/TokenException';
+import { CognitoJwtVerifier } from 'aws-jwt-verify';
+import type { CognitoJwtVerifierSingleUserPool } from 'aws-jwt-verify/cognito-verifier';
 import { Logger } from './Logger';
 
 // initialize Logger
@@ -74,37 +72,43 @@ interface CognitoAccessTokenPayload extends JwtPayload {
   username?: string;
 }
 
-interface CognitoUserPoolKeyInstance {
-  alg: string,
-  e: string,
-  kid: string,
-  kty: string,
-  n: string,
-  use: string
-}
+/**
+ * Value of the Cognito `token_use` claim
+ */
+type CognitoTokenUse = 'access' | 'id';
 
-interface CognitoUserPoolKey {
-  instance: CognitoUserPoolKeyInstance,
-  pem: string
-}
-interface CognitoUserPoolKeys {
-  [key: string]: CognitoUserPoolKey
-}
+/**
+ * Properties of a cached aws-jwt-verify verifier (one per user pool, token use and client id)
+ */
+type CognitoVerifierProperties = {
+  userPoolId: string;
+  tokenUse: CognitoTokenUse;
+  clientId: string;
+};
+type CognitoVerifier = CognitoJwtVerifierSingleUserPool<CognitoVerifierProperties>;
 
 /**
  * Cognito Token management utility class
  */
 class CognitoToken {
+  // verifiers are cached across instances (and warm Lambda invocations) so that
+  // the user pool JWKS is downloaded once per verifier
+  private static verifiers: Map<string, CognitoVerifier> = new Map();
+
   private token: string;
+  // kept for API compatibility.  aws-jwt-verify derives the expected issuer from the user pool id
   private tokenIssuer?: string;
   private userPoolArn?: string;
-  private userPoolPublicKeys?: CognitoUserPoolKeys;
+  private clientId?: string;
 
   /**
    * C-TOR
-   * @param  {string} token value that represents a Bearer token
+   * @param {string} token value that represents a Bearer token
+   * @param {string} tokenIssuer cognito token issuer url (optional, defaults to env COGNITO_ISSUER)
+   * @param {string} userPoolArn cognito user pool arn (optional, defaults to env COGNITO_USER_POOL_ARN)
+   * @param {string} clientId cognito app client id (optional, defaults to env COGNITO_CLIENT_ID)
    */
-  constructor(token: string, tokenIssuer?: string, userPoolArn?: string) {
+  constructor(token: string, tokenIssuer?: string, userPoolArn?: string, clientId?: string) {
     this.token = token;
 
     // do some token clean-up
@@ -118,7 +122,6 @@ class CognitoToken {
 
     // default tokenIssuer to constructor passed tokenIssuer
     // otherwise, read cognitoIssuer from environment variable 'COGNITO_ISSUER'
-    // if all fails, leave userPoolArn as 'undefined'.  We test it in getTokenKey method.
     if (tokenIssuer) {
       this.tokenIssuer = tokenIssuer;
     }
@@ -128,13 +131,41 @@ class CognitoToken {
 
     // default userPoolArn to constructor passed userPoolArn
     // otherwise, read userPoolArn from environment variable 'COGNITO_USER_POOL_ARN'
-    // if all fails, leave userPoolArn as 'undefined'.  We test it in getTokenKey method.
+    // if all fails, leave userPoolArn as 'undefined'.  verify() then fails closed.
     if (userPoolArn) {
       this.userPoolArn = userPoolArn;
     }
     else if (process.env.COGNITO_USER_POOL_ARN) {
       this.userPoolArn = process.env.COGNITO_USER_POOL_ARN;
     }
+
+    // default clientId to constructor passed clientId
+    // otherwise, read clientId from environment variable 'COGNITO_CLIENT_ID'
+    // if all fails, leave clientId as 'undefined'.  verify() then fails closed.
+    if (clientId) {
+      this.clientId = clientId;
+    }
+    else if (process.env.COGNITO_CLIENT_ID) {
+      this.clientId = process.env.COGNITO_CLIENT_ID;
+    }
+  }
+
+  /**
+   * Return a cached aws-jwt-verify Cognito verifier for given user pool, token use and client id.
+   * A verifier caches the user pool JWKS, so reusing it avoids a JWKS download per request.
+   * @param {string} userPoolId cognito user pool id, e.g. us-east-1_XXXXXXXXX
+   * @param {CognitoTokenUse} tokenUse expected `token_use` claim ('access' or 'id')
+   * @param {string} clientId expected app client id (`client_id` claim of access token, `aud` claim of id token)
+   * @returns {CognitoVerifier} verifier instance
+   */
+  public static getVerifier(userPoolId: string, tokenUse: CognitoTokenUse, clientId: string): CognitoVerifier {
+    const key = `${userPoolId}|${tokenUse}|${clientId}`;
+    let verifier = CognitoToken.verifiers.get(key);
+    if (!verifier) {
+      verifier = CognitoJwtVerifier.create({ userPoolId, tokenUse, clientId });
+      CognitoToken.verifiers.set(key, verifier);
+    }
+    return verifier;
   }
 
   /**
@@ -442,131 +473,38 @@ class CognitoToken {
   }
 
   /**
-   * Get the key used to sign the current token
-   * @param {string} tokenIssuer cognito token issuer url.  It usually takes the form 'https://cognito-idp.AWS_REGION.amazonaws.com/us-east-N_XXXX'
-   * @param {string} userPoolArn cognito user pool arn.
-   * @returns {string} public key used to sign this.token
+   * Verify current token with aws-jwt-verify: signature (user pool JWKS), `exp`, `iss`
+   * (derived from the user pool id), `token_use` and client id (`client_id` claim of an
+   * access token, `aud` claim of an id token).
+   * Fails closed: returns false when the user pool arn or client id is not configured,
+   * when the token cannot be decoded, or when any verification check fails.
+   * The token value is never logged.
+   * @param {CognitoTokenUse} expectedTokenUse expected `token_use` claim.  Defaults to 'access'
+   *   when the token is an access token, otherwise 'id'
+   * @returns {boolean} true or false indicating if token verification was successful
    */
-  public async getTokenKey(tokenIssuer?: string, userPoolArn?: string): Promise<string> {
-
-    // override tokenIssuer and userPoolArn values if we were invoked with parameters
-    if (tokenIssuer) {
-      this.tokenIssuer = tokenIssuer;
-    }
-    if (userPoolArn) {
-      this.userPoolArn = userPoolArn;
-    }
-
-    // throw error if tokenIssuer is undefined
-    if (!this.tokenIssuer) {
-      const errorMessage = 'invalid cognitoIssuer.  Initialize CognitoToken class properly or set cognitoIssuer environment variable';
-      log.error(errorMessage);
-      throw new TokenException(errorMessage);
-    }
-
-    // throw error if userPoolArn is undefined
+  public async verify(expectedTokenUse?: CognitoTokenUse): Promise<boolean> {
     if (!this.userPoolArn) {
-      const errorMessage = 'invalid userPoolArn.  Initialize CognitoToken class properly or set userPoolArn environment variable';
-      log.error(errorMessage);
-      throw new TokenException(errorMessage);
+      log.error('unable to verify token: user pool arn is not set.  Initialize CognitoToken class properly or set COGNITO_USER_POOL_ARN environment variable');
+      return false;
+    }
+    if (!this.clientId) {
+      log.error('unable to verify token: client id is not set.  Initialize CognitoToken class properly or set COGNITO_CLIENT_ID environment variable');
+      return false;
     }
 
-    const tokenSections = (this.getToken() || '').split('.');
-    if (tokenSections.length < 2) {
-      const errorMessage = `token is invalid.  tokenSections: ${tokenSections}`;
-      log.error(errorMessage);
-      throw new TokenException(errorMessage);
-    }
-
-    const headerJSON = Buffer.from(tokenSections[0], 'base64').toString('utf8');
-    const header = JSON.parse(headerJSON);
-    log.debug(`parsed token header: ${JSON.stringify(header)}`);
-
-    // retrieve public keys of cognito user-pool
-    const keys = await this.getUserPoolPublicKeys();
-    // if the call above failed, throw an error
-    if (!keys) {
-      const errorMessage = 'unable to retrieve  Initialize CognitoToken class properly or set userPoolArn environment variable';
-      log.error(errorMessage);
-      throw new TokenException(errorMessage);
-    }
-
-    const key = keys[header.kid];
-
-    // if key is not found in cognito user-pool public keys then throw error
-    if (key === undefined) {
-      const errorMessage = 'token was signed using unknown kid';
-      log.error(errorMessage);
-      throw new TokenException(errorMessage);
-    }
-
-    log.debug(`retrieved public key for kid ${header.kid}. returning pem ${key.pem}`);
-    // otherwise, we managed to retrieve a key, let's return the pem value of key
-    return key.pem;
-  }
-
-  /**
-   * Invoke .well-known/jwks.json of currently set cognito user-pool (tokenIssuer) and
-   * retrieve all keys used to sign tokens.
-   * @returns {CognitoUserPoolKeys | undefined} return list of keys or undefined if error occurred while retrieving cognito user-pool public keys.
-   */
-  private async getUserPoolPublicKeys(): Promise<CognitoUserPoolKeys | undefined> {
-    // throw error if userPoolArn is undefined
-    if (!this.userPoolArn) {
-      throw new TokenException('invalid userPoolArn.  Initialize CognitoToken class properly or set userPoolArn environment variable');
-    }
-
-    // extract cognito user-pool-id
-    const userPoolId = this.userPoolArn.substring(this.userPoolArn.lastIndexOf("/") + 1);
-
-    // if cognito public keys are not cached, make API call to retrieve keys
-    // from .well-known/jwks.json endpoint of the cognito user pool
-    if (!this.userPoolPublicKeys) {
-      const url = `${this.tokenIssuer}/${userPoolId}/.well-known/jwks.json`;
-      log.debug("public key url: " + url);
-      const publicKeys = await axios.get(url);
-      this.userPoolPublicKeys = publicKeys.data.keys.reduce( (accumulator: CognitoUserPoolKeys, currentValue: CognitoUserPoolKeyInstance) => {
-        const jwkBuff = <jwkToPem.JWK> {
-          kty: currentValue.kty,
-          e: currentValue.e,
-          n: currentValue.n
-        };
-        const pem = jwkToPem(jwkBuff);
-
-        accumulator[currentValue.kid] = {
-          instance: currentValue,
-          pem
-        };
-        return accumulator;
-      }, {});
-      return this.userPoolPublicKeys;
-    } else {
-      return this.userPoolPublicKeys;
-    }
-  }
-
-  /**
-   * Verify current token
-   * @returns {boolean} true or false indicating if token verification using token key was successful
-   */
-  public async verify(): Promise<boolean> {
     try {
-      const tokenPublicKey = await this.getTokenKey();
-      jwt.verify(this.token, tokenPublicKey);
+      const tokenUse: CognitoTokenUse = expectedTokenUse || (this.isAccessToken() ? 'access' : 'id');
+      // extract cognito user-pool-id from the user pool arn
+      const userPoolId = this.userPoolArn.substring(this.userPoolArn.lastIndexOf('/') + 1);
+      const verifier = CognitoToken.getVerifier(userPoolId, tokenUse, this.clientId);
+      await verifier.verify(this.token);
       // token verification successful, return true
       return true;
     }
-    catch ( e: any ) {
-      if (e instanceof TokenException ) {
-        const errorMessage = `error while retrieving key for token.  name: ${e.name} , message: ${e.message}`;
-        log.error(errorMessage);
-      } else {
-        let errorMessage = `error occurred while verifying token`;
-        if (e.message) {
-          errorMessage = `error occurred while verifying token: ${e.message}`;
-        }
-        log.error(errorMessage);
-      }
+    catch ( e ) {
+      const err = e as Error;
+      log.error(`error occurred while verifying token - ${err?.name}: ${err?.message}`);
     }
 
     // error occurred during token verification, return false
