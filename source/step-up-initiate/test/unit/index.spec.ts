@@ -303,6 +303,43 @@ describe('handler', () => {
     );
   }
 
+  it('returns UNAUTHENTICATED when passed a lowercase non-bearer authorization header', async () => {
+    const response = await handler(
+      {
+        ...BASE_EVENT,
+        path: '/initiate-auth',
+        httpMethod: 'POST',
+        headers: { authorization: 'Basic zzzz' },
+      },
+      BASE_CONTEXT
+    );
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toBe('{"code":"UNAUTHENTICATED"}');
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a lowercase bearer authorization header (Amplify v6)', async () => {
+    sendMock.mockResolvedValueOnce({
+      PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA',
+      UserMFASettingList: ['SOFTWARE_TOKEN_MFA'],
+    });
+
+    const response = await handler(
+      {
+        ...BASE_EVENT,
+        path: '/initiate-auth',
+        httpMethod: 'POST',
+        headers: { authorization: 'Bearer xyz' },
+      },
+      BASE_CONTEXT
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe('{"code":"SOFTWARE_TOKEN_STEP_UP"}');
+    expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetUserCommand);
+    expect(sendMock.mock.calls[0][0].input.AccessToken).toBe('xyz');
+  });
+
   it('returns NOT_FOUND on any other path', async () => {
     expect(
       await handler(

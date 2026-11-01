@@ -1,13 +1,17 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { describe, expect, it, beforeEach } from '@jest/globals';
+import { describe, expect, it, beforeAll, beforeEach, afterEach } from '@jest/globals';
 import { Context, APIGatewayProxyEvent } from 'aws-lambda';
 import {
-  CognitoIdentityProviderClient
+  CognitoIdentityProviderClient,
+  VerifySoftwareTokenCommand
 } from '@aws-sdk/client-cognito-identity-provider';
+import { CognitoToken } from '@step-up-auth/auth-utils';
+import { Session, SessionClient, StepUpStatusEnum } from '@step-up-auth/auth-sdk';
 
 import { handler } from '../../src/index';
+import { signJwt, testJwk } from '../helpers/jwt';
 
 const BASE_EVENT: APIGatewayProxyEvent = {
   body: '',
@@ -96,6 +100,68 @@ describe('handler', () => {
       });
     });
   }
+
+  it('returns UNAUTHENTICATED when passed a lowercase non-bearer authorization header', async () => {
+    const response = await handler(
+      {
+        ...BASE_EVENT,
+        path: '/respond-to-challenge',
+        httpMethod: 'POST',
+        headers: { authorization: 'Basic zzzz' },
+      },
+      BASE_CONTEXT
+    );
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toBe('{"code":"UNAUTHENTICATED"}');
+  });
+
+  describe('with a lowercase authorization header (Amplify v6)', () => {
+    const USER_POOL_ID = 'us-east-1_TESTPOOL1';
+    const CLIENT_ID = 'testclient';
+    const originalEnv = { ...process.env };
+
+    beforeAll(() => {
+      // prime the JWKS cache of the verifier that CognitoToken.verify('access') uses (no network call)
+      CognitoToken.getVerifier(USER_POOL_ID, 'access', CLIENT_ID).cacheJwks({ keys: [testJwk] });
+    });
+
+    beforeEach(() => {
+      process.env.COGNITO_USER_POOL_ARN = `arn:aws:cognito-idp:us-east-1:123456789012:userpool/${USER_POOL_ID}`;
+      process.env.COGNITO_CLIENT_ID = CLIENT_ID;
+      jest.spyOn(SessionClient.prototype, 'getSession').mockResolvedValue(
+        new Session('jti-1', 'alice', CLIENT_ID, undefined, '/transfer', StepUpStatusEnum.STEP_UP_REQUIRED));
+      jest.spyOn(SessionClient.prototype, 'updateSession').mockResolvedValue('jti-1');
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+      process.env = { ...originalEnv };
+    });
+
+    it('accepts the bearer token and verifies the challenge with Cognito', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const accessToken = signJwt({
+        sub: 'sub-1', iss: `https://cognito-idp.us-east-1.amazonaws.com/${USER_POOL_ID}`, token_use: 'access',
+        exp: now + 3600, iat: now, jti: 'jti-1', client_id: CLIENT_ID, username: 'alice',
+      });
+      sendMock.mockResolvedValue({ Status: 'SUCCESS' });
+
+      const response = await handler(
+        {
+          ...BASE_EVENT,
+          path: '/respond-to-challenge',
+          httpMethod: 'POST',
+          headers: { authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ 'step-up-type': 'SOFTWARE_TOKEN_STEP_UP', 'challenge-response': '123456' }),
+        },
+        BASE_CONTEXT
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(sendMock.mock.calls[0][0]).toBeInstanceOf(VerifySoftwareTokenCommand);
+      expect(sendMock.mock.calls[0][0].input.AccessToken).toBe(accessToken);
+    });
+  });
 
   it('returns 400 on any other path', async () => {
     expect(

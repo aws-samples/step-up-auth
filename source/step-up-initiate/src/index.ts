@@ -4,6 +4,7 @@
 import {
   Context,
   APIGatewayProxyEvent,
+  APIGatewayProxyEventHeaders,
   APIGatewayProxyResult,
 } from 'aws-lambda';
 import {
@@ -28,6 +29,21 @@ const BASE_HEADERS = {
 };
 
 /**
+ * Return the value of a request header, matching the header name case-insensitively.
+ * Amplify JS v6 sends lowercase header names and API Gateway REST passes names as sent.
+ * @param headers request headers
+ * @param name header name
+ * @returns header value, or undefined if the header is not present
+ */
+const getHeader = (headers: APIGatewayProxyEventHeaders | null | undefined, name: string): string | undefined => {
+  if (!headers) {
+    return undefined;
+  }
+  const headerName = Object.keys(headers).find((key) => key.toLowerCase() === name.toLowerCase());
+  return headerName === undefined ? undefined : headers[headerName];
+};
+
+/**
  * Step-up Auth Initiate API Proxy Lambda handler
  * @param event Lambda event object
  * @param context Lambda request context object
@@ -48,7 +64,8 @@ export const handler = async (
   }
 
   if (event.path == '/initiate-auth' && event.httpMethod == 'POST') {
-    const authorizationHeader = event.headers['Authorization'];
+    // header names are matched case-insensitively
+    const authorizationHeader = getHeader(event.headers, 'Authorization');
     if (
       !authorizationHeader ||
       !/^Bearer [A-Za-z0-9-_=.]+$/.test(authorizationHeader)

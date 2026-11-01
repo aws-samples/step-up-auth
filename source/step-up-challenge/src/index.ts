@@ -4,6 +4,7 @@
 import {
   Context,
   APIGatewayProxyEvent,
+  APIGatewayProxyEventHeaders,
   APIGatewayProxyResult } from 'aws-lambda';
 import { Logger } from '@step-up-auth/auth-utils';
 import { Error, Info } from './types';
@@ -22,6 +23,21 @@ const BASE_HEADERS = {
     'Content-Type,X-Amz-Date,Authorization,identification,X-Api-Key,X-Amz-Security-Token',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
+};
+
+/**
+ * Return the value of a request header, matching the header name case-insensitively.
+ * Amplify JS v6 sends lowercase header names and API Gateway REST passes names as sent.
+ * @param headers request headers
+ * @param name header name
+ * @returns header value, or undefined if the header is not present
+ */
+const getHeader = (headers: APIGatewayProxyEventHeaders | null | undefined, name: string): string | undefined => {
+  if (!headers) {
+    return undefined;
+  }
+  const headerName = Object.keys(headers).find((key) => key.toLowerCase() === name.toLowerCase());
+  return headerName === undefined ? undefined : headers[headerName];
 };
 
 /**
@@ -48,10 +64,11 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
   }
 
   if (event.path === '/respond-to-challenge' && event.httpMethod === 'POST') {
-    //Get Authorization Header
+    //Get Authorization Header (header names are matched case-insensitively)
     let authorizationHeader = '';
-    if (event.headers && event.headers['Authorization']) {
-      authorizationHeader = event.headers['Authorization'];
+    const authorizationHeaderValue = getHeader(event.headers, 'Authorization');
+    if (authorizationHeaderValue) {
+      authorizationHeader = authorizationHeaderValue;
       if (
         !authorizationHeader ||
         !/^Bearer [A-Za-z0-9-_=.]+$/.test(authorizationHeader)
