@@ -28,7 +28,8 @@ export class DynamoDbStack extends cdk.Stack {
       },
       tableName: props.environmentPrefix ? `step-up-auth-session-${props.environmentPrefix}` : 'step-up-auth-session',
       timeToLiveAttribute: 'ttl',
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
     // ----------------------------------------
@@ -39,7 +40,8 @@ export class DynamoDbStack extends cdk.Stack {
         name: 'id', type: dynamodb.AttributeType.STRING
       },
       tableName: props.environmentPrefix ? `step-up-auth-setting-${props.environmentPrefix}` : 'step-up-auth-setting',
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
     // ----------------------------------------
@@ -51,7 +53,8 @@ export class DynamoDbStack extends cdk.Stack {
       },
       tableName: props.environmentPrefix ? `step-up-auth-token-${props.environmentPrefix}` : 'step-up-auth-token',
       timeToLiveAttribute: 'ttl',
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
     });
   }
 }

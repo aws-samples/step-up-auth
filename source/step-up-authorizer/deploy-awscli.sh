@@ -4,13 +4,14 @@
 # SPDX-License-Identifier: MIT-0
 
 ## initialize and do some pre-flight checks
-if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$ENV_PREFIX" -o -z "$COGNITO_UP_ARN" ]; then
+if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$ENV_PREFIX" -o -z "$COGNITO_UP_ARN" -o -z "$COGNITO_CLIENT_ID" ]; then
     echo "Missing environment variables.  Ensure following environment variables are set"
     echo "  AWS_PROFILE"
     echo "  AWS_REGION"
     echo "  AWS_LAMBDA_ROLE_ARN"
     echo "  ENV_PREFIX"
     echo "  COGNITO_UP_ARN"
+    echo "  COGNITO_CLIENT_ID"
     exit 1
 fi
 
@@ -35,6 +36,7 @@ echo "AWS_REGION: ${AWS_REGION}"
 echo "AWS_LAMBDA_ROLE_ARN: ${AWS_LAMBDA_ROLE_ARN}"
 echo "ENV_PREFIX: ${ENV_PREFIX}"
 echo "COGNITO_UP_ARN: ${COGNITO_UP_ARN}"
+echo "COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}"
 echo "WORKING_DIR: ${WORKING_DIR}"
 echo "NODE_ENV: ${NODE_ENV}"
 echo
@@ -88,7 +90,7 @@ if [ $? -ne 0 ]; then
         --tracing-config Mode=PassThrough \
         --timeout 30 \
         --memory-size 128 \
-        --environment Variables="{NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN}}" \
+        --environment Variables="{NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN},COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID}}" \
         --role ${AWS_LAMBDA_ROLE_ARN} \
         --handler ${module_export} \
         --profile ${AWS_PROFILE} >& /tmp/$$.lambda.create

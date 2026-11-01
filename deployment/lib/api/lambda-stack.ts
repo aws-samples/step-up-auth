@@ -12,7 +12,10 @@ import { Construct } from 'constructs';
 export interface LambdaProps extends cdk.StackProps {
   readonly environmentPrefix?: string;
   readonly nodeEnvironment?: string;
+  /** step-up session lifetime in seconds (SESSION_TABLE_ITEM_TTL) */
+  readonly sessionTableItemTtl: number;
   readonly cognitoUserPool: cognito.UserPool;
+  readonly cognitoUserPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
   readonly lambdaExecutionRole: iam.Role;
   /**
@@ -72,6 +75,8 @@ export class LambdaStack extends cdk.Stack {
       environment: {
         COGNITO_ISSUER: props.cognitoIssuer,
         COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
+        COGNITO_CLIENT_ID: props.cognitoUserPoolClient.userPoolClientId,
+        SESSION_TABLE_ITEM_TTL: String(props.sessionTableItemTtl),
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''
       }

@@ -6,6 +6,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Infrastructure } from '../lib/infrastructure';
 import { Api } from '../lib/api';
 import { WebUI } from '../lib/webui';
+import { parseSessionTableItemTtl } from '../lib/context';
 
 const app = new cdk.App();
 
@@ -30,6 +31,9 @@ if (environmentPrefix && environmentPrefix.length <= 0) { // check for zero leng
 const nodeEnvironment: string | undefined =
   process.env.NODE_ENV || app.node.tryGetContext("node_env") || 'development'; // default to 'development' mode
 
+// step-up session lifetime in seconds (default 900); throws unless it is a positive integer
+const sessionTableItemTtl: number = parseSessionTableItemTtl(app.node.tryGetContext("session_table_item_ttl"));
+
 /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
 const environment: cdk.Environment = {
   region: awsRegion,
@@ -47,7 +51,9 @@ new Api(app, "StepUpAuthApi", {
   env: environment,
   environmentPrefix: environmentPrefix,
   nodeEnvironment: nodeEnvironment,
+  sessionTableItemTtl: sessionTableItemTtl,
   userPool: infrastructure.cognitoUserPool,
+  userPoolClient: infrastructure.cognitoUserPoolClient,
   cognitoIssuer: infrastructure.cognitoIssuer,
   apigatewayLambdaAuthorizerRole: infrastructure.apigatewayLambdaAuthorizerRole,
   apigatewayExecutionRole: infrastructure.apigatewayExecutionRole,

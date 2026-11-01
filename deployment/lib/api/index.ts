@@ -13,7 +13,10 @@ export interface ApiProps {
   readonly env: cdk.Environment;
   readonly environmentPrefix?: string;
   readonly nodeEnvironment?: string;
+  /** step-up session lifetime in seconds (SESSION_TABLE_ITEM_TTL) */
+  readonly sessionTableItemTtl: number;
   readonly userPool: cognito.UserPool;
+  readonly userPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
   readonly apigatewayLambdaAuthorizerRole: iam.Role;
   readonly apigatewayExecutionRole: iam.Role;
@@ -36,7 +39,9 @@ export class Api extends Construct {
       env: props.env,
       environmentPrefix: props.environmentPrefix,
       nodeEnvironment: props.nodeEnvironment,
+      sessionTableItemTtl: props.sessionTableItemTtl,
       cognitoUserPool: props.userPool,
+      cognitoUserPoolClient: props.userPoolClient,
       cognitoIssuer: props.cognitoIssuer,
       lambdaExecutionRole: props.lambdaExecutionRole,
       assetRoot: props.assetRoot
@@ -51,7 +56,9 @@ export class Api extends Construct {
       stepUpChallengeFunc: lambdaStack.stepUpChallengeFunc,
       stepUpSampleApiFunc: lambdaStack.stepUpSampleApiFunc,
       lambdaExecutionRole: props.lambdaExecutionRole,
+      sessionTableItemTtl: props.sessionTableItemTtl,
       cognitoUserPool: props.userPool,
+      cognitoUserPoolClient: props.userPoolClient,
       cognitoIssuer: props.cognitoIssuer,
       apigatewayLambdaAuthorizerRole: props.apigatewayLambdaAuthorizerRole,
       apigatewayExecutionRole: props.apigatewayExecutionRole,

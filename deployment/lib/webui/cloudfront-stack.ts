@@ -21,7 +21,10 @@ export class CloudfrontStack extends cdk.Stack {
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       // OAI rather than OAC: with the bucket in its own stack, CDK's OAC bucket
       // policy would reference this distribution and create a cross-stack cycle.
-      defaultBehavior: { origin: origins.S3BucketOrigin.withOriginAccessIdentity(props.bucket) },
+      defaultBehavior: {
+        origin: origins.S3BucketOrigin.withOriginAccessIdentity(props.bucket),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS
+      },
       defaultRootObject: 'index.html',
       errorResponses: [
         {

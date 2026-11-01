@@ -41,7 +41,9 @@ export class CognitoStack extends cdk.Stack {
       },
       autoVerify: {
         email: true, phone: false
-      }
+      },
+      // sample resources: `cdk destroy` removes the pool
+      removalPolicy: cdk.RemovalPolicy.DESTROY
     });
 
     // ----------------------------------------

@@ -18,7 +18,15 @@ export class S3Stack extends cdk.Stack {
     super(scope, id, props);
 
     this.bucket = new s3.Bucket(this, 'Bucket', {
-      bucketName: `step-up-auth-web-ui-${props.env.account}-${props.env.region}`
+      bucketName: `step-up-auth-web-ui-${props.env.account}-${props.env.region}`,
+      // private bucket: CloudFront reads it through an origin access identity
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      // sample resources: `cdk destroy` empties and removes the bucket
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true
     });
 
     // ----------------------------------------

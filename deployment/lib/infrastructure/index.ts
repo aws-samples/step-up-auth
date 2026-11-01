@@ -18,6 +18,7 @@ export interface InfrastructureProps {
 
 export class Infrastructure extends Construct {
   public readonly cognitoUserPool: cognito.UserPool;
+  public readonly cognitoUserPoolClient: cognito.UserPoolClient;
   public readonly cognitoIssuer: string;
   public readonly apigatewayLambdaAuthorizerRole: iam.Role;
   public readonly apigatewayExecutionRole: iam.Role;
@@ -43,6 +44,7 @@ export class Infrastructure extends Construct {
       smsRole: iamStack.smsRole
     });
     this.cognitoUserPool = cognitoStack.userPool;
+    this.cognitoUserPoolClient = cognitoStack.appClient;
     this.cognitoIssuer = cognitoStack.cognitoIssuer;
 
     // create DynamoDB stack
@@ -53,5 +55,22 @@ export class Infrastructure extends Construct {
     this.sessionTable = dynamoDbStack.sessionTable;
     this.settingTable = dynamoDbStack.settingTable;
     this.tokenTable = dynamoDbStack.tokenTable;
+
+    // least privilege: the Lambdas only make these item-level calls, and only
+    // on the step-up-auth tables
+    this.lambdaExecutionRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: [
+        'dynamodb:GetItem',
+        'dynamodb:PutItem',
+        'dynamodb:UpdateItem',
+        'dynamodb:DeleteItem'
+      ],
+      resources: [
+        this.sessionTable.tableArn,
+        this.settingTable.tableArn,
+        this.tokenTable.tableArn
+      ]
+    }));
   }
 }

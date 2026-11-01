@@ -29,20 +29,6 @@ export class IamStack extends cdk.Stack {
       resources: ['*'],
       actions: ['lambda:InvokeFunction'],
     }));
-    this.apigatewayLambdaAuthorizerRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      resources: ['*'],
-      actions: [
-        'dynamodb:GetItem',
-        'dynamodb:Query',
-        'dynamodb:PutItem',
-        'dynamodb:UpdateItem',
-        'dynamodb:DeleteItem',
-        'dynamodb:Scan',
-        // 'dynamodb:BatchGetItem',
-        // 'dynamodb:BatchWriteItem'
-      ],
-    }));
 
     // ----------------------------------------
     //        api gateway execution role
@@ -66,9 +52,7 @@ export class IamStack extends cdk.Stack {
     this.lambdaExecutionRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('SecretsManagerReadWrite')
     );
-    this.lambdaExecutionRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess')
-    );
+    // DynamoDB access is granted per table in lib/infrastructure/index.ts
     this.lambdaExecutionRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AWSLambdaExecute')
     );
