@@ -9,12 +9,12 @@
   "author": "AWS Professional Services",
   "repository": {
     "type": "git",
-    "url": "https://code.amazon.com/packages/StepUpAuth/trees/mainline"
+    "url": "git+https://github.com/aws-samples/step-up-auth.git"
   },
   "bugs": {
-    "url": "https://code.amazon.com/packages/StepUpAuth/trees/mainline"
+    "url": "https://github.com/aws-samples/step-up-auth/issues"
   },
-  "homepage": "https://code.amazon.com/packages/StepUpAuth/trees/mainline",
+  "homepage": "https://github.com/aws-samples/step-up-auth#readme",
   "keywords": [
     "node",
     "typescript",
