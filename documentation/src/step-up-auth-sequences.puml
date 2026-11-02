@@ -1,0 +1,110 @@
+@startuml
+' Step-up authentication sequence diagram.
+' Render: plantuml -tpng -nometadata -o .. step-up-auth-sequences.puml
+skin rose
+skinparam dpi 100
+skinparam defaultFontSize 12
+skinparam maxMessageSize 330
+skinparam sequenceMessageAlign left
+
+title Step-up Authentication Flow
+
+actor User
+participant UserAgent #LightGreen
+participant "Mobile\nDevice" as Mobile #Orange
+participant Cognito #Orange
+box "Privilege API" #DDDDDD
+participant "API Gateway" as PrivApi #LightSalmon
+participant "Lambda\nAuthorizer" as Authorizer
+participant "Business Logic\nLambda" as Backend
+end box
+participant "DynamoDB\nAPI Setting" as Setting #LightBlue
+box "Step Up Auth APIs" #DDDDDD
+participant "API Gateway" as StepUpApi #LightSalmon
+participant "Initiate Auth\nLambda" as Initiate
+participant "Respond To Challenge\nLambda" as Respond
+end box
+participant "DynamoDB\nSession" as Session #LightBlue
+
+User -> UserAgent : login
+UserAgent -> Cognito : InitiateAuth
+Cognito --> UserAgent : ID token, access token
+User -> UserAgent : perform privilege operation\n/transfer
+UserAgent -> PrivApi : /transfer\nAuthorization: Bearer <access token>
+PrivApi -> Authorizer : Authorize
+Authorizer -> Authorizer : verify access token
+note right of Authorizer
+  no Authorization header: 401
+  invalid access token: deny (403)
+end note
+Authorizer -> Setting : look-up API setting (id = API path)
+Setting --> Authorizer : stepUpState, or no setting
+
+alt STEP_UP_DENY, or setting can't be read
+  Authorizer --> PrivApi : deny policy
+  PrivApi --> UserAgent : 403
+else STEP_UP_NOT_REQUIRED, or no setting
+  Authorizer --> PrivApi : allow policy (session table not used)
+  PrivApi -> Backend : invoke
+  Backend --> PrivApi : success
+  PrivApi --> UserAgent : 200
+else STEP_UP_REQUIRED
+  Authorizer -> Session : get session (sessionId = access token jti)
+  Session --> Authorizer : session, or not found
+  alt stepUpStatus = STEP_UP_COMPLETED and ttl > now
+    Authorizer --> PrivApi : allow policy
+    PrivApi -> Backend : invoke
+    Backend --> PrivApi : success
+    PrivApi --> UserAgent : 200
+  else no session, ttl passed or missing, or any other stepUpStatus
+    Authorizer -> Session : create session (sessionId = access token jti)\nstepUpStatus = STEP_UP_REQUIRED\nttl = min(now + SESSION_TABLE_ITEM_TTL, token exp)
+    Session --> Authorizer : session created
+    Authorizer --> PrivApi : 401 (Unauthorized)
+    PrivApi --> UserAgent : 401
+  else session can't be read
+    Authorizer --> PrivApi : deny policy
+    PrivApi --> UserAgent : 403
+  end
+end
+
+UserAgent -> StepUpApi : /initiate-auth - trigger step-up challenge if 401 was received\nIdentification: <ID token>\nAuthorization: Bearer <access token>
+StepUpApi -> StepUpApi : Cognito authorizer validates\nID token (invalid: 401)
+StepUpApi -> Initiate : invoke Lambda\nProxy
+Initiate -> Cognito : GetUser (access token)
+Cognito --> Initiate : MFA settings, phone number verified
+opt SMS_STEP_UP
+  Initiate -> Cognito : GetUserAttributeVerificationCode (phone_number)
+  Cognito --> Mobile : send temporary\npass code
+  Cognito --> Initiate : code sent
+end
+Initiate --> StepUpApi : return SMS_STEP_UP,\nSOFTWARE_TOKEN_STEP_UP,\nor MAYBE_SOFTWARE_TOKEN_STEP_UP
+StepUpApi --> UserAgent : return SMS_STEP_UP, SOFTWARE_TOKEN_STEP_UP, or MAYBE_SOFTWARE_TOKEN_STEP_UP
+UserAgent -> UserAgent : render pass\ncode entry\nscreen
+User -> Mobile : user retrieves temporary\npass code from device
+Mobile --> User
+User -> UserAgent : enter pass code
+UserAgent -> StepUpApi : /respond-to-challenge\nIdentification: <ID token>\nAuthorization: Bearer <access token>\nbody: step-up-type, challenge-response
+StepUpApi -> StepUpApi : Cognito authorizer validates\nID token (invalid: 401)
+StepUpApi -> Respond : invoke Lambda Proxy
+Respond -> Respond : verify access token
+Respond -> Cognito : VerifyUserAttribute (SMS_STEP_UP) or VerifySoftwareToken (SOFTWARE_TOKEN_STEP_UP, MAYBE_SOFTWARE_TOKEN_STEP_UP)
+
+alt verification successful
+  Cognito --> Respond : verification successful
+  Respond -> Session : update session (sessionId = access token jti)\nstepUpStatus = STEP_UP_COMPLETED\nttl = min(now + SESSION_TABLE_ITEM_TTL, token exp)
+  Session --> Respond : update successful
+else verification failed
+  Cognito --> Respond : verification failed
+  Respond -> Respond : noop
+end
+
+Respond --> StepUpApi : return\n200 if pass code verification successful\n401 if verification failed
+StepUpApi --> UserAgent : 200 if pass code verification successful\n401 if verification failed
+UserAgent -> PrivApi : retry /transfer
+note right of PrivApi
+  same flow as above: the session is
+  STEP_UP_COMPLETED and its ttl is in
+  the future, so the authorizer allows
+  the call (200) until the ttl passes
+end note
+@enduml
