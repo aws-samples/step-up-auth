@@ -15,9 +15,9 @@ Prerequisites: Node.js 24 and npm 11 (the Lambda functions run on `nodejs24.x`),
 * `npm run test`    perform the jest unit tests
 * `npx cdk synth`   emits the synthesized CloudFormation templates (needs the Lambda zips from `./build.sh`)
 * `npx cdk diff`    compare deployed stack with current state
-* `npx cdk deploy`  deploy this stack to your default AWS account/region
+* `npx cdk deploy --all`  deploy all 7 stacks to the account and region set below (`./deploy.sh` also bootstraps the account and uploads the web app)
 
-The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env` and the optional `session_table_item_ttl` (seconds, default 900).  For example, to synthesize without deploying:
+The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env` and the optional `session_table_item_ttl` (seconds, default 900).  The `AWS_ACCOUNT`, `AWS_REGION` and `NODE_ENV` environment variables, when set, take precedence over `aws_account`, `aws_region` and `node_env`.  For example, to synthesize without deploying:
 
 ```sh
 npx cdk synth -c aws_region=us-east-1 -c aws_account=123456789012 -c env_prefix=dev -c node_env=development
@@ -60,10 +60,21 @@ export CDK_OUTPUTS_FILE=$PWD/cdk-outputs.json
 cd deployment && ./deploy.sh
 ```
 
-To remove everything, run `undeploy.sh` with the same variables.  It runs `cdk destroy --all --force`, which also deletes the Cognito user pool, the DynamoDB tables and the web bucket with its objects.  The CDK bootstrap stack (`CDKToolkit`) and the Lambda log groups are not removed.
+To remove the solution, run `undeploy.sh` with the same variables.  It runs `cdk destroy --all --force` (CDK synthesizes the app first, so the Lambda zips from `build.sh` must still be present), which also deletes the Cognito user pool, the DynamoDB tables and the web bucket with its objects.  The CDK bootstrap stack (`CDKToolkit`) is not removed.
 
 ```sh
 cd deployment && ./undeploy.sh
+```
+
+The Lambda CloudWatch log groups are not removed either.  `cdk.json` sets `@aws-cdk/aws-lambda:useCdkManagedLogGroup` to `true`, so CDK creates a log group for each of the four Lambda functions with a `RETAIN` removal policy, and `cdk destroy` keeps them.  The helper function that empties the web bucket also leaves its log group behind.  Their names start with `/aws/lambda/StepUpAuth`, as do the log groups of an earlier version of this sample in the same account and region.  List them, check the list, then delete them (this permanently deletes their log events):
+
+```sh
+aws logs describe-log-groups --region "$AWS_REGION" --log-group-name-prefix /aws/lambda/StepUpAuth \
+  --query 'logGroups[].logGroupName' --output text
+for group in $(aws logs describe-log-groups --region "$AWS_REGION" --log-group-name-prefix /aws/lambda/StepUpAuth \
+    --query 'logGroups[].logGroupName' --output text); do
+  aws logs delete-log-group --region "$AWS_REGION" --log-group-name "$group"
+done
 ```
 
 With `NODE_ENV=development` the Lambda functions write debug logs; credential environment values and JWTs are redacted.  `LOG_RAW_SECRETS=true` turns redaction off for local runs only, never inside Lambda.

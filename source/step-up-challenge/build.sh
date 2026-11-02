@@ -68,8 +68,8 @@ else
 fi
 
 if [ ! -d "node_modules" ]; then
-  echo "warning: run 'npm install' before running the build to ensure local build is successful"
-  echo "warning: run 'npm link <dep modules>' after npm install to maintain local dev env"
+  echo "warning: run 'npm ci' before running the build to ensure local build is successful"
+  echo "warning: run 'npm link <dep modules>' (all in one command) after npm ci to maintain local dev env"
   exit 2
 fi
 

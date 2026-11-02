@@ -2,27 +2,27 @@
 
 ## Local Development Environment Setup
 
-Complete steps below to setup local development environment.  VSCode IDE is recommended but not required.  If using VSCode, refer to .vscode folder for helper tasks (task.json), launch configuration (launch.json).
+Complete steps below to setup local development environment.  VSCode IDE is recommended but not required.  If using VSCode, refer to .vscode folder for helper tasks (tasks.json), launch configuration (launch.json).
 
-- run `npm install` to download all node dependencies
-- run `npm link` to create auth-sdk symbolic link that points to your /usr/local/lib/node_module folder (global node_modules).  This allows other modules to import this module during local development by referencing `@step-up-auth/auth-sdk`
-- type `npm link` to create auth-util symbolic link that points to your /usr/local/lib/node_module folder (global node_modules)
-- run `npm run test` to execute unit tests
-  - ensure that AWS_PROFILE environment variable is set.  Set AWS_PROFILE to `default`.
+- link `auth-utils` first: run `npm ci && npm link` in the `auth-utils` folder
+- run `npm ci` to download all node dependencies
+- run `npm link` to create auth-sdk symbolic link in your global node_modules folder (run `npm root -g` to see where it is).  This allows other modules to import this module during local development by referencing `@step-up-auth/auth-sdk`
+- run `npm link @step-up-auth/auth-utils` to use the local auth-utils module.  `npm ci` removes npm links, so run this step again after every `npm ci`
+- run `npm run test` to execute unit tests.  The unit tests don't call AWS, so they don't need AWS credentials or `AWS_PROFILE`.
 - run `npm run test-e2e` to execute end-to-end integration tests.  These tests require access to DynamoDB tables therefore these tests shouldn't execute in CICD pipeline.  Run these tests in local development mode, for now.
-  - ensure that AWS_PROFILE environment variable is set.  Set AWS_PROFILE to `default`.
+  - ensure that AWS credentials are available, for example by setting the AWS_PROFILE environment variable.  The tests use the deployed tables `step-up-auth-session-<ENV_PREFIX>`, `step-up-auth-setting-<ENV_PREFIX>` and `step-up-auth-token-<ENV_PREFIX>` (without the `-<ENV_PREFIX>` suffix when `ENV_PREFIX` is not set) in `AWS_REGION` (default `us-east-1`).
 
 ## DynamoDB Table Setup
 
 ### Session Table Structure
 
-Table structure is outlined in `lib/dynamodb/session.ts`.  Following CloudFormation template highlights `session` table definition:
+Table structure is outlined in `lib/dynamodb/model/Session.ts`.  The CDK deployment creates the tables (`deployment/lib/infrastructure/dynamodb-stack.ts`).  Following CloudFormation template highlights `session` table definition:
 
 ```yaml
   SessionDynamoDBTable:
     Type: "AWS::DynamoDB::Table"
     Properties:
-      TableName: !Sub step-up-auth-${ENVNAME}-session
+      TableName: !Sub step-up-auth-session-${ENVNAME}
       AttributeDefinitions:
         -
           AttributeName: "sessionId"
@@ -31,8 +31,13 @@ Table structure is outlined in `lib/dynamodb/session.ts`.  Following CloudFormat
         -
           AttributeName: "sessionId"
           KeyType: "HASH"
+      TimeToLiveSpecification:
+        AttributeName: "ttl"
+        Enabled: true
       BillingMode: PAY_PER_REQUEST
 ```
+
+DynamoDB TTL on `ttl` only deletes old items.  `SessionClient` sets `ttl` to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)`, and the authorizer rejects a session whose `ttl` has passed.
 
 Following Global Secondary Index (GSI) is required:
 
@@ -40,13 +45,13 @@ Following Global Secondary Index (GSI) is required:
 
 ### Setting Table Structure
 
-Table structure is outlined in `lib/dynamodb/setting.ts`.  Following CloudFormation template highlights `setting` table definition:
+Table structure is outlined in `lib/dynamodb/model/Setting.ts`.  Following CloudFormation template highlights `setting` table definition:
 
 ```yaml
   RuleDynamoDBTable:
     Type: "AWS::DynamoDB::Table"
     Properties:
-      TableName: !Sub step-up-auth-${ENVNAME}-setting
+      TableName: !Sub step-up-auth-setting-${ENVNAME}
       AttributeDefinitions:
         -
           AttributeName: "id"
@@ -60,13 +65,13 @@ Table structure is outlined in `lib/dynamodb/setting.ts`.  Following CloudFormat
 
 ### Token Table Structure
 
-Table structure is outlined in `lib/dynamodb/token.ts`.  Following CloudFormation template highlights `token` table definition:
+Table structure is outlined in `lib/dynamodb/model/Token.ts`.  Following CloudFormation template highlights `token` table definition:
 
 ```yaml
   TokenDynamoDBTable:
     Type: "AWS::DynamoDB::Table"
     Properties:
-      TableName: !Sub step-up-auth-${ENVNAME}-token
+      TableName: !Sub step-up-auth-token-${ENVNAME}
       AttributeDefinitions:
         -
           AttributeName: "id"
@@ -75,6 +80,9 @@ Table structure is outlined in `lib/dynamodb/token.ts`.  Following CloudFormatio
         -
           AttributeName: "id"
           KeyType: "HASH"
+      TimeToLiveSpecification:
+        AttributeName: "ttl"
+        Enabled: true
       BillingMode: PAY_PER_REQUEST
 ```
 
