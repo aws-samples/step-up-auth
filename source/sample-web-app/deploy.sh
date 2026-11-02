@@ -11,6 +11,8 @@ trap_signals() {
 
 #####################################################################
 # PREFLIGHT CHECK
+# AWS credentials come from the AWS CLI's default credential chain, for
+# example the AWS_PROFILE environment variable that deployment/deploy.sh requires
 if [ -z "${AWS_REGION}" -o \
      -z "${S3_BUCKET_NAME}" -o \
      -z "${CLOUDFRONT_DISTRIBUTION_ID}" ]; then
@@ -18,6 +20,7 @@ if [ -z "${AWS_REGION}" -o \
     echo "  AWS_REGION"
     echo "  S3_BUCKET_NAME"
     echo "  CLOUDFRONT_DISTRIBUTION_ID"
+    echo "AWS credentials come from the AWS CLI's default credential chain (for example, set AWS_PROFILE)"
     exit 1
 fi
 
@@ -40,8 +43,7 @@ fi
 echo "Copying dist contents to Web UI S3 bucket: ${S3_BUCKET_NAME}"
 cd dist
 "${AWS_CLI_BIN}" s3 cp . "s3://${S3_BUCKET_NAME}" --recursive \
-    --region ${AWS_REGION} \
-    --profile ${AWS_PROFILE} > /tmp/$$.aws.s3.log 2>&1
+    --region "${AWS_REGION}" > /tmp/$$.aws.s3.log 2>&1
 if [ $? -ne 0 ]; then
     echo "Error during copy to s3.  aws cli log:"
     cat /tmp/$$.aws.s3.log
@@ -56,8 +58,7 @@ echo "Invalidating cloudfront distribution cache: ${CLOUDFRONT_DISTRIBUTION_ID}"
 "${AWS_CLI_BIN}" cloudfront create-invalidation \
     --distribution-id "${CLOUDFRONT_DISTRIBUTION_ID}" \
     --paths "/*" \
-    --region ${AWS_REGION} \
-    --profile ${AWS_PROFILE} > /tmp/$$.aws.cloudfront.log 2>&1
+    --region "${AWS_REGION}" > /tmp/$$.aws.cloudfront.log 2>&1
 if [ $? -ne 0 ]; then
     echo "Error invalidating cloudfront distribution ${CLOUDFRONT_DISTRIBUTION_ID}.  aws cli log:"
     cat /tmp/$$.aws.cloudfront.log
