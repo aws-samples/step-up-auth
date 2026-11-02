@@ -10,6 +10,9 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     echo "  AWS_REGION"
     echo "  AWS_LAMBDA_ROLE_ARN"
     echo "  ENV_PREFIX"
+    echo "Optional environment variables"
+    echo "  DEPLOYMENT_ENV (NODE_ENV of the function, default production)"
+    echo "The function's environment variables are set only when the function is created.  For an existing function, only the code is updated."
     exit 1
 fi
 
@@ -76,7 +79,7 @@ module_zip_path=`ls ${module_zip}/${dist_name_zip}`
 # if yes, run "aws update-function-code"
 # if no, run "aws create-function"
 
-aws lambda get-function --function-name ${module_name} --profile ${AWS_PROFILE} --region ${AWS_REGION} >& /tmp/$$.get.lambda
+aws lambda get-function --function-name ${module_name} --profile ${AWS_PROFILE} --region ${AWS_REGION} > /tmp/$$.get.lambda 2>&1
 if [ $? -ne 0 ]; then
     aws lambda create-function \
         --region ${AWS_REGION} \
@@ -89,19 +92,21 @@ if [ $? -ne 0 ]; then
         --environment Variables="{NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX}}" \
         --role ${AWS_LAMBDA_ROLE_ARN} \
         --handler ${module_export} \
-        --profile ${AWS_PROFILE} >& /tmp/$$.lambda.create
+        --profile ${AWS_PROFILE} > /tmp/$$.lambda.create 2>&1
+    lambda_rc=$?
     cat /tmp/$$.lambda.create
 else
     aws lambda update-function-code \
         --region ${AWS_REGION} \
         --function-name ${module_name} \
         --zip-file fileb://"${module_zip_path}" \
-        --profile ${AWS_PROFILE} >& /tmp/$$.lambda.update
+        --profile ${AWS_PROFILE} > /tmp/$$.lambda.update 2>&1
+    lambda_rc=$?
     cat /tmp/$$.lambda.update
 fi
 
-# check for error
-if [ $? -ne 0 ]; then
+# check for error (exit status of the aws command, not of cat)
+if [ ${lambda_rc} -ne 0 ]; then
     echo "unable to create/update lambda"
     rm -rf /tmp/$$.*
     exit 4
