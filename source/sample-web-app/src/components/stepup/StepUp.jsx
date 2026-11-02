@@ -183,7 +183,7 @@ class StepUp extends Component {
           )}
         </Segment>
         <Segment>
-          <Label>This is a POST call to an unprotected API Gateway endpoint.</Label>
+          <Label>This is a GET call to an API Gateway endpoint with Request Authorizer that does not require step-up authentication.</Label>
           <Button onClick={e => this.info(e)}>Invoke Info API</Button>
           { infoError && (
             <div>
