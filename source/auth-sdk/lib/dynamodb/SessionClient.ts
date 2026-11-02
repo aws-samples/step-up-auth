@@ -22,6 +22,7 @@ import { Session } from './model/Session';
 import { StepUpStatusEnum } from './model/types';
 import { CreateException } from './exception/CreateException';
 import { RecordNotFoundException } from './exception/RecordNotFoundException';
+import { ReadException } from './exception/ReadException';
 import { UpdateException } from './exception/UpdateException';
 
 // initialize Logger
@@ -119,7 +120,8 @@ class SessionClient extends Client {
    * Retrieve item from session table for given session id
    * @param {string} sessionId session id
    * @return {Session} Session object
-   * @throws {RecordNotFoundException} If operation fails, throw 'Error'
+   * @throws {RecordNotFoundException} If there is no session for given session id
+   * @throws {ReadException} If DynamoDB operation fails
    */
   public async getSession(sessionId: string): Promise<Session> {
     // construct parameters for the GetItemCommand
@@ -130,23 +132,25 @@ class SessionClient extends Client {
       }
     };
 
+    let output: GetItemCommandOutput;
     try {
-      const output: GetItemCommandOutput = await this.client.send(new GetItemCommand(input));
-      if (output && output.Item) {
-        const session: Session = unmarshall(output.Item) as Session;
-        return session;
-      }
-
-      // Item was undefined
-      const errorMessage = `unable to locate record with sessionId: ${sessionId}`;
-      log.error(errorMessage);
-      throw new RecordNotFoundException(errorMessage);
+      output = await this.client.send(new GetItemCommand(input));
     }
     catch ( err: any ) {
       const errorMessage = `error while retrieving record with sessionId: ${sessionId} - ${err.name}: ${err.message}`;
       log.error(errorMessage);
-      throw new RecordNotFoundException(errorMessage);
+      throw new ReadException(errorMessage);
     }
+
+    if (output && output.Item) {
+      const session: Session = unmarshall(output.Item) as Session;
+      return session;
+    }
+
+    // Item was undefined
+    const errorMessage = `unable to locate record with sessionId: ${sessionId}`;
+    log.error(errorMessage);
+    throw new RecordNotFoundException(errorMessage);
   }
 
   /**
@@ -257,7 +261,9 @@ class SessionClient extends Client {
    * @param {StepUpStatusEnum} stepUpStatus enum indicating step up auth status
    * @param {number} tokenExp optional `exp` claim (epoch seconds) of the access token.  When set, ttl never exceeds it
    * @returns {string} session id
-   * @throws {RecordNotFoundException} If operation fails, throw 'Error'
+   * @throws {RecordNotFoundException} If there is no session for given session id
+   * @throws {ReadException} If the session cannot be read
+   * @throws {UpdateException} If update operation fails
    */
   public async updateStepUpStatus(sessionId: string, stepUpStatus: StepUpStatusEnum, tokenExp?: number): Promise<string> {
     // retrieve session object

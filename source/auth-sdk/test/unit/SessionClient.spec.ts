@@ -4,9 +4,15 @@
 import { describe, expect, it, beforeEach, afterEach, jest } from '@jest/globals';
 import {
   DynamoDBClient,
+  GetItemCommand,
   PutItemCommand,
   UpdateItemCommand } from '@aws-sdk/client-dynamodb';
-import { SessionClient, Session, StepUpStatusEnum } from '../../index';
+import {
+  SessionClient,
+  Session,
+  StepUpStatusEnum,
+  ReadException,
+  RecordNotFoundException } from '../../index';
 
 describe('SessionClient ttl', () => {
   const SESSION_TTL = 900;
@@ -81,5 +87,42 @@ describe('SessionClient ttl', () => {
       await new SessionClient().updateSession(session());
       expect(Math.abs(updateTtl() - (now + SESSION_TTL))).toBeLessThanOrEqual(1);
     });
+  });
+});
+
+describe('SessionClient getSession()', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type SendMock = jest.Mock<(...args: any[]) => any>;
+  let sendMock: SendMock;
+
+  beforeEach(() => {
+    sendMock = jest.spyOn(DynamoDBClient.prototype, 'send') as unknown as SendMock;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('returns the session for an existing row', async () => {
+    sendMock.mockResolvedValue({
+      Item: { sessionId: { S: 'session-1' }, stepUpStatus: { S: 'STEP_UP_COMPLETED' }, ttl: { N: '1700000000' } }
+    });
+    const retrieved = await new SessionClient().getSession('session-1');
+    expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetItemCommand);
+    expect(retrieved.sessionId).toBe('session-1');
+    expect(retrieved.stepUpStatus).toBe(StepUpStatusEnum.STEP_UP_COMPLETED);
+    expect(retrieved.ttl).toBe(1700000000);
+  });
+
+  it('throws RecordNotFoundException for a missing row', async () => {
+    sendMock.mockResolvedValue({});
+    await expect(new SessionClient().getSession('session-1')).rejects.toBeInstanceOf(RecordNotFoundException);
+  });
+
+  it('throws ReadException, not RecordNotFoundException, on a DynamoDB error', async () => {
+    sendMock.mockRejectedValue(Object.assign(new Error('not authorized to perform dynamodb:GetItem'), { name: 'AccessDeniedException' }));
+    const result = new SessionClient().getSession('session-1');
+    await expect(result).rejects.toBeInstanceOf(ReadException);
+    await expect(result).rejects.not.toBeInstanceOf(RecordNotFoundException);
   });
 });
