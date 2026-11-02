@@ -18,7 +18,8 @@ import {
   SettingClient,
   Session,
   StepUpStatusEnum,
-  StepUpStateEnum } from '@step-up-auth/auth-sdk';
+  StepUpStateEnum,
+  RecordNotFoundException } from '@step-up-auth/auth-sdk';
 
 // initialize Logger
 import * as path from 'path';
@@ -121,76 +122,77 @@ class RequestAuthorizer extends Authorizer {
     // extract token expiry.  a new session's ttl never exceeds it
     this.tokenExp = accessToken.getExpClaim();
 
-    // check if sessionId exists in session
-    // - if yes, then check for STATUS field
-    //   - if STATUS == STEP_UP_COMPLETE then return 200
-    //   - otherwise return 401
-    // - if no, then
-    //   - create new session using sessionId, return 401
+    // the api setting decides first, so that STEP_UP_DENY applies even when the
+    // caller has a completed step-up session
+    // - STEP_UP_DENY: return deny policy (403)
+    // - STEP_UP_NOT_REQUIRED or no setting: return allow policy without touching the session table
+    // - STEP_UP_REQUIRED: check the step-up session (see generateResponseUsingSession())
+    // - setting can't be read: return deny policy (403)
+    let stepUpState: StepUpStateEnum;
     try {
-      // look-up sessionId in 'session' and determine if step-up 'required' or 'completed'
-      // if 'complete' return 200 and allow policy
-      // otherwise return 401
-      const client: SessionClient = new SessionClient();
-      const retrievedSession: Session = await client.getSession(sessionId);
-
-      if (retrievedSession) {
-        log.debug(`retrieved session using sessionId: ${retrievedSession.sessionId} , step-up status: ${retrievedSession.stepUpStatus}`);
-
-        switch (retrievedSession.stepUpStatus) {
-          case StepUpStatusEnum.STEP_UP_REQUIRED:
-            throw new Error("Unauthorized");
-
-          case StepUpStatusEnum.STEP_UP_COMPLETED:
-          case StepUpStatusEnum.STEP_UP_NOT_REQUIRED:
-            // DynamoDB deletes expired items lazily, so check the ttl here.  An expired
-            // (or ttl-less) session is treated as "no session": break out of the switch
-            // and fall through to the setting check below, which re-creates a
-            // STEP_UP_REQUIRED session (401) for a step-up API
-            if (!retrievedSession.ttl || retrievedSession.ttl <= Math.floor(Date.now() / 1000)) {
-              log.warn(`session '${sessionId}' with step-up status ${retrievedSession.stepUpStatus} has expired (ttl: ${retrievedSession.ttl}).  treating it as no session`);
-              break;
-            }
-            return this.generateAllowResponse();
-
-          default:
-            return this.generateDenyResponse();
-        }
-      }
+      const settingClient = new SettingClient();
+      stepUpState = await settingClient.getStepUpStatus(this.event.path);
     } catch ( e: any ) {
-      log.warn(`unable to retrieve request details for sessionId '${sessionId}'.  error: ${e.message}`);
+      log.error(`unable to read setting for api '${this.event.path}'.  denying access.  error: ${e.message}`);
+      return this.generateDenyResponse();
     }
+    log.debug(`api ${this.event.path} step-up state: ${stepUpState}`);
 
-    // in all other cases, return rule based policy
-    return this.generateAuthorizerResponseUsingSetting(this.event.path, sessionId);
+    switch (stepUpState) {
+      case StepUpStateEnum.STEP_UP_NOT_REQUIRED:
+        return this.generateAllowResponse();
+
+      case StepUpStateEnum.STEP_UP_REQUIRED:
+        return this.generateResponseUsingSession(sessionId);
+
+      case StepUpStateEnum.STEP_UP_DENY:
+      default:
+        return this.generateDenyResponse();
+    }
   }
 
 
   /**
-   * Generate API Gateway Request Authorizer response based auth-sdk setting table.
-   * @param {string} api API path or API ARN to check in rules table
-   * @param {string} sessionId session id to associate with new record in session table
+   * Generate API Gateway Request Authorizer response for an api that requires step-up, based on
+   * the caller's step-up session in auth-sdk session table.
+   * - a STEP_UP_COMPLETED session whose ttl is in the future: return allow policy
+   * - no session, an expired or missing ttl, or any other step-up status: create a new
+   *   STEP_UP_REQUIRED session and return 401
+   * - session can't be read: return deny policy (403)
+   * @param {string} sessionId session id (access token jti) to look up, and to use for a new session
    * @returns {APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>} API Gateway request authorizer response
    */
-  private async generateAuthorizerResponseUsingSetting(api: string, sessionId: string): Promise<APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>> {
-    log.debug('generateAuthorizerResponseUsingSetting() called');
-    // check rule to determine if step-up is required for this api invocation, if yes
-    //   return 401
-    const client = new SettingClient();
-    const retrievedStepUpStatus = await client.getStepUpStatus(api);
-    log.debug(`generateAuthorizerResponseUsingSetting(): ${api} step-up status: ${retrievedStepUpStatus}`);
-
-    // generate sessionId only when api has a rule with STEP_UP_REQUIRED in rule table
-    if (retrievedStepUpStatus === StepUpStateEnum.STEP_UP_REQUIRED) {
-      await this.createSession(sessionId);
-      throw new Error("Unauthorized");
-    }
-    else if (retrievedStepUpStatus === StepUpStateEnum.STEP_UP_DENY) {
-      return this.generateDenyResponse();
+  private async generateResponseUsingSession(sessionId: string): Promise<APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>> {
+    log.debug('generateResponseUsingSession() called');
+    let retrievedSession: Session | undefined;
+    try {
+      const client: SessionClient = new SessionClient();
+      retrievedSession = await client.getSession(sessionId);
+    } catch ( e: any ) {
+      if (!(e instanceof RecordNotFoundException)) {
+        // read error (e.g. DynamoDB or IAM failure), as opposed to "no session": fail closed
+        log.error(`unable to read session '${sessionId}'.  denying access.  error: ${e.message}`);
+        return this.generateDenyResponse();
+      }
+      log.debug(`no session found for sessionId '${sessionId}'`);
     }
 
-    // in all other cases, return allow policy.
-    return this.generateAllowResponse();
+    if (retrievedSession) {
+      log.debug(`retrieved session using sessionId: ${retrievedSession.sessionId} , step-up status: ${retrievedSession.stepUpStatus}`);
+
+      // DynamoDB deletes expired items lazily, so check the ttl here
+      const nowInSeconds = Math.floor(Date.now() / 1000);
+      if (retrievedSession.stepUpStatus === StepUpStatusEnum.STEP_UP_COMPLETED &&
+          retrievedSession.ttl && retrievedSession.ttl > nowInSeconds) {
+        return this.generateAllowResponse();
+      }
+      log.warn(`session '${sessionId}' with step-up status ${retrievedSession.stepUpStatus} (ttl: ${retrievedSession.ttl}) does not allow access.  starting a new step-up challenge`);
+    }
+
+    // no session, an expired session or a session that has not completed step-up:
+    // create a new STEP_UP_REQUIRED session and return 401
+    await this.createSession(sessionId);
+    throw new Error("Unauthorized");
   }
 
   /**
