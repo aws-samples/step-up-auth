@@ -83,12 +83,12 @@ A sample record in this table is given below.  Let's go through each attribute:
 
 ```json
 {
- "sessionId": "81984146-9a13-473d-a1d0-11da4d194718",
- "clientId": "5ak6q222n2m5rn52akhp81vm59",
- "token": "81984146-9a13-473d-a1d0-11da4d194718",
+ "sessionId": "11111111-2222-4333-8444-555555555555",
+ "clientId": "1example23456789abcdefghij",
+ "token": "11111111-2222-4333-8444-555555555555",
  "stepUpStatus": "STEP_UP_REQUIRED",
- "userId": "smoghal",
- "referrerUrl": "https://0k7tb69r3l.execute-api.us-east-2.amazonaws.com/dev/transfer",
+ "userId": "user1",
+ "referrerUrl": "https://abcde12345.execute-api.us-east-2.amazonaws.com/dev/transfer",
  "createTimestamp": "2021-09-19T04:42:39.486Z",
  "lastUpdateTimestamp": "2021-09-19T04:42:39.486Z",
  "ttl": 1632027459

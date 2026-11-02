@@ -46,7 +46,7 @@
           "DEPLOYMENT_ENV": "development",
           "AWS_LAMBDA_ROLE_ARN": "arn:aws:iam::1234567890:role/LambdaExecutionRole",
           "ENV_PREFIX": "dev-",
-          "COGNITO_UP_ARN": "arn:aws:cognito-idp:us-east-1:1234567890:userpool/us-east-1_vj9eQpSVn"
+          "COGNITO_UP_ARN": "arn:aws:cognito-idp:us-east-1:1234567890:userpool/us-east-1_EXAMPLE11"
         }
       },
       "presentation": {

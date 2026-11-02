@@ -6,7 +6,7 @@
      "accept": "application/json, text/plain, */*",
      "accept-encoding": "gzip, deflate, br",
      "accept-language": "en-US,en;q=0.9",
-     "Authorization": "Bearer eyJraWQiOiJPYjNzVm92R2RoNjJQcDlUTE5pYnpDRWhSd2JoTGpoa3h5Z29DSnpvWVdRPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiIxYmMyYThmYi1mYzBhLTQ0MGYtOTNhZS01NzZlMDg3OWQxODAiLCJjb2duaXRvOmdyb3VwcyI6WyJ1cy1lYXN0LTFfaVdjVFBoWkJBX2FkZnMiXSwiZXZlbnRfaWQiOiJhNTMyNjA1ZC1jMTRhLTQyZTAtOGQwYy03NThiOWMwNDQ3OTMiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiYXV0aF90aW1lIjoxNjE3MTgzNjM5LCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAudXMtZWFzdC0xLmFtYXpvbmF3cy5jb21cL3VzLWVhc3QtMV9pV2NUUGhaQkEiLCJleHAiOjE2MTcxODcyMzksImlhdCI6MTYxNzE4MzYzOSwianRpIjoiYzQwZDY3MWMtODkyMS00MTc1LWI1NWYtNGQ3NTEzZjA1NGY0IiwiY2xpZW50X2lkIjoiNmkwbzZzZWxhMTVqZGN0Z2VmbGttajRnam8iLCJ1c2VybmFtZSI6ImFkZnNfbW9naGFsc1xcYm9iIn0.Hb1b3kRSzBLX87KqNtgZi90bHZF9HdrsrawkCdW0EqWoqxgfeu2nn2F18M_3dVjPEVsQqffDONNV1-3oxuaoW_-oj-sNILT6pjGOK6VontpyW5dWNwzgtVZ99atcxc7lCtepsF8gMt4mi6lBM4mXgz-dB5lyd55v0H-_8vT9dAoEyuJQ5WjFRlka34Z0I6eH2L0hvVBZCpA414gVN7Mnd-c2XAJta5l_YIYcnWFRF3rI7yUXqrDVVki2Z9qIBRXfBDG4HoUtGyXhnBPd1QhhIeIVSr08m1PtNbNCCRUJXgNBkdH_bBtILdEiy1q29imI5G2H7GbuGVGt3qVXeFeMiA",
+     "Authorization": "Bearer eyJraWQiOiJleGFtcGxlLWtpZC0yIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiLCJjb2duaXRvOmdyb3VwcyI6WyJ1cy1lYXN0LTFfRVhBTVBMRTExX0V4YW1wbGVJZFAiXSwiZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDQiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiYXV0aF90aW1lIjoxNjE3MTgzNjM5LCJpc3MiOiJodHRwczovL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tL3VzLWVhc3QtMV9FWEFNUExFMTEiLCJleHAiOjE2MTcxODcyMzksImlhdCI6MTYxNzE4MzYzOSwianRpIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA1IiwiY2xpZW50X2lkIjoiMWV4YW1wbGUyMzQ1Njc4OWFiY2RlZmdoaWoiLCJ1c2VybmFtZSI6InVzZXIyIn0.ZmFrZS1zaWduYXR1cmU",
      "content-type": "application/x-www-form-urlencoded",
      "Host": "abcdef5126.execute-api.us-east-1.amazonaws.com",
      "origin": "http://localhost:8080",
@@ -33,7 +33,7 @@
         "en-US,en;q=0.9"
      ],
      "Authorization": [
-        "Bearer eyJraWQiOiJPYjNzVm92R2RoNjJQcDlUTE5pYnpDRWhSd2JoTGpoa3h5Z29DSnpvWVdRPSIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiIxYmMyYThmYi1mYzBhLTQ0MGYtOTNhZS01NzZlMDg3OWQxODAiLCJjb2duaXRvOmdyb3VwcyI6WyJ1cy1lYXN0LTFfaVdjVFBoWkJBX2FkZnMiXSwiZXZlbnRfaWQiOiJhNTMyNjA1ZC1jMTRhLTQyZTAtOGQwYy03NThiOWMwNDQ3OTMiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiYXV0aF90aW1lIjoxNjE3MTgzNjM5LCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAudXMtZWFzdC0xLmFtYXpvbmF3cy5jb21cL3VzLWVhc3QtMV9pV2NUUGhaQkEiLCJleHAiOjE2MTcxODcyMzksImlhdCI6MTYxNzE4MzYzOSwianRpIjoiYzQwZDY3MWMtODkyMS00MTc1LWI1NWYtNGQ3NTEzZjA1NGY0IiwiY2xpZW50X2lkIjoiNmkwbzZzZWxhMTVqZGN0Z2VmbGttajRnam8iLCJ1c2VybmFtZSI6ImFkZnNfbW9naGFsc1xcYm9iIn0.Hb1b3kRSzBLX87KqNtgZi90bHZF9HdrsrawkCdW0EqWoqxgfeu2nn2F18M_3dVjPEVsQqffDONNV1-3oxuaoW_-oj-sNILT6pjGOK6VontpyW5dWNwzgtVZ99atcxc7lCtepsF8gMt4mi6lBM4mXgz-dB5lyd55v0H-_8vT9dAoEyuJQ5WjFRlka34Z0I6eH2L0hvVBZCpA414gVN7Mnd-c2XAJta5l_YIYcnWFRF3rI7yUXqrDVVki2Z9qIBRXfBDG4HoUtGyXhnBPd1QhhIeIVSr08m1PtNbNCCRUJXgNBkdH_bBtILdEiy1q29imI5G2H7GbuGVGt3qVXeFeMiA"
+        "Bearer eyJraWQiOiJleGFtcGxlLWtpZC0yIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDMiLCJjb2duaXRvOmdyb3VwcyI6WyJ1cy1lYXN0LTFfRVhBTVBMRTExX0V4YW1wbGVJZFAiXSwiZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDQiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6ImF3cy5jb2duaXRvLnNpZ25pbi51c2VyLmFkbWluIiwiYXV0aF90aW1lIjoxNjE3MTgzNjM5LCJpc3MiOiJodHRwczovL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tL3VzLWVhc3QtMV9FWEFNUExFMTEiLCJleHAiOjE2MTcxODcyMzksImlhdCI6MTYxNzE4MzYzOSwianRpIjoiMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDA1IiwiY2xpZW50X2lkIjoiMWV4YW1wbGUyMzQ1Njc4OWFiY2RlZmdoaWoiLCJ1c2VybmFtZSI6InVzZXIyIn0.ZmFrZS1zaWduYXR1cmU"
      ],
      "content-type": [
         "application/x-www-form-urlencoded"
@@ -85,7 +85,7 @@
   "requestContext": {
      "resourceId": "ses26j",
      "authorizer": {
-        "principalId": "gigya\\bob",
+        "principalId": "user2",
         "integrationLatency": 285,
         "step_up": "required",
         "request_id": "d884f8c10d49b455",
