@@ -71,26 +71,45 @@ describe('SessionClient ttl', () => {
   });
 
   describe('createChallengeSession()', () => {
-    it('writes the explicit ttl verbatim (challenge creation + STEP_UP_CHALLENGE_TTL)', async () => {
-      const now = nowInSeconds();
-      const explicitTtl = now + 600;
-      await new SessionClient().createChallengeSession('challenge#abc', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, explicitTtl);
-      expect(putTtl()).toBe(explicitTtl);
+    // creation epoch stored on the written row: floor(Date.parse(createTimestamp) / 1000)
+    const putCreateEpoch = (): number => {
+      const command = sendMock.mock.calls[0][0] as PutItemCommand;
+      expect(command).toBeInstanceOf(PutItemCommand);
+      return Math.floor(Date.parse(command.input.Item!.createTimestamp.S!) / 1000);
+    };
+
+    it('derives the ttl from the stored creation timestamp (creation epoch + lifetime)', async () => {
+      const lifetime = 600;
+      await new SessionClient().createChallengeSession('challenge#abc', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, lifetime);
+      expect(putTtl()).toBe(putCreateEpoch() + lifetime);
     });
 
-    it('is NOT capped by SESSION_TABLE_ITEM_TTL, even when that is set smaller than the challenge ttl', async () => {
-      // if the challenge ttl were run through computeTtl, a small SESSION_TABLE_ITEM_TTL would shorten it
+    it('keeps ttl === floor(createTimestamp) + lifetime across a sub-second boundary (single clock read)', async () => {
+      // freeze the clock 1ms before a second rollover: two independent reads could land on different
+      // seconds, but deriving both fields from one read keeps createTimestamp and ttl exactly consistent
+      jest.useFakeTimers().setSystemTime(new Date('2026-01-01T00:00:00.999Z'));
+      try {
+        const lifetime = 300;
+        await new SessionClient().createChallengeSession('challenge#edge', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, lifetime);
+        const createEpoch = putCreateEpoch();
+        expect(createEpoch).toBe(Math.floor(Date.parse('2026-01-01T00:00:00.999Z') / 1000));
+        expect(putTtl()).toBe(createEpoch + lifetime);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('is NOT shortened by a smaller SESSION_TABLE_ITEM_TTL (bypasses the computeTtl cap)', async () => {
+      // if the challenge ran through computeTtl, a 60s SESSION_TABLE_ITEM_TTL would clamp a 600s challenge
       process.env.SESSION_TABLE_ITEM_TTL = '60';
-      const now = nowInSeconds();
-      const explicitTtl = now + 600;
-      await new SessionClient().createChallengeSession('challenge#abc', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, explicitTtl);
-      // the full 600s ttl is preserved, not clamped to now + 60
-      expect(putTtl()).toBe(explicitTtl);
+      const lifetime = 600;
+      await new SessionClient().createChallengeSession('challenge#abc', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, lifetime);
+      // the full lifetime is preserved relative to the stored creation epoch, not clamped to now + 60
+      expect(putTtl()).toBe(putCreateEpoch() + lifetime);
     });
 
     it('records the challenge subject and a STEP_UP_REQUIRED status', async () => {
-      const now = nowInSeconds();
-      await new SessionClient().createChallengeSession('challenge#abc', 'sub-1', StepUpStatusEnum.STEP_UP_REQUIRED, now + 600);
+      await new SessionClient().createChallengeSession('challenge#abc', 'sub-1', StepUpStatusEnum.STEP_UP_REQUIRED, 600);
       const command = sendMock.mock.calls[0][0] as PutItemCommand;
       expect(command).toBeInstanceOf(PutItemCommand);
       expect(command.input.Item!.sessionId.S).toBe('challenge#abc');

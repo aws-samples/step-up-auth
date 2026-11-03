@@ -119,29 +119,35 @@ class SessionClient extends Client {
   /**
    * Create a one-time step-up challenge row with an EXPLICIT, absolute ttl (epoch seconds).
    *
-   * Unlike {@link createSessionWithParams}, the ttl is written verbatim and is deliberately NOT run
-   * through {@link computeTtl}.  So the challenge lifetime is governed solely by the caller (the
-   * initiate Lambda's `STEP_UP_CHALLENGE_TTL`) and can never be silently shortened by
+   * Unlike {@link createSessionWithParams}, the absolute ttl is derived here from the SAME clock read
+   * that sets the stored creation timestamp, and is deliberately NOT run through {@link computeTtl}.
+   * Taking the lifetime (not a pre-computed absolute ttl) means the written row always satisfies
+   * `ttl === floor(Date.parse(createTimestamp) / 1000) + lifetimeSeconds`: a caller computing the
+   * absolute ttl from its own earlier clock read could disagree with this row's creation time across a
+   * second rollover, whereas a single read here cannot.  So the challenge lifetime is governed solely
+   * by the caller's `STEP_UP_CHALLENGE_TTL` and can never be silently shortened by
    * `SESSION_TABLE_ITEM_TTL`, even if that variable is ever set on the initiate Lambda.  A challenge
    * carries no access token, so there is no token `exp` to cap against; its only control is this ttl.
    * @param {string} sessionId session id (e.g. `challenge#<challengeId>`)
    * @param {string} userId user id (Cognito `sub`) the challenge is minted for
    * @param {StepUpStatusEnum} stepUpStatus step-up status to store on the row
-   * @param {number} ttlEpochSeconds absolute ttl in epoch seconds, written to the row as-is
+   * @param {number} lifetimeSeconds challenge lifetime in seconds (`STEP_UP_CHALLENGE_TTL`); the
+   *   absolute ttl is derived from the same creation timestamp stored on the row
    * @returns {string} session id
    * @throws {CreateException} If DynamoDB operation fails, throw 'Error'
    */
-  public async createChallengeSession(sessionId: string, userId: string, stepUpStatus: StepUpStatusEnum, ttlEpochSeconds: number): Promise<string> {
-    // get current timestamp
+  public async createChallengeSession(sessionId: string, userId: string, stepUpStatus: StepUpStatusEnum, lifetimeSeconds: number): Promise<string> {
+    // one clock read drives both the stored creation timestamp and the absolute ttl
     const now = new Date();
     // create the challenge record
     const session: Session = new Session(sessionId, userId, undefined, undefined, '', stepUpStatus);
     // set timestamps
     session.createTimestamp = now.toISOString();
     session.lastUpdateTimestamp = now.toISOString();
-    // write the ttl exactly as given.  intentionally bypasses computeTtl() so SESSION_TABLE_ITEM_TTL
-    // can never shorten a challenge below STEP_UP_CHALLENGE_TTL
-    session.ttl = ttlEpochSeconds;
+    // derive the absolute ttl from the same `now` as createTimestamp, so the row always satisfies
+    // ttl === floor(Date.parse(createTimestamp) / 1000) + lifetimeSeconds.  intentionally bypasses
+    // computeTtl() so SESSION_TABLE_ITEM_TTL can never shorten a challenge below STEP_UP_CHALLENGE_TTL
+    session.ttl = Math.floor(now.getTime() / 1000) + lifetimeSeconds;
 
     // create the record
     try {

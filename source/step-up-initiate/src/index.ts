@@ -128,19 +128,19 @@ export const handler = async (
     const sub = idSub;
 
     // mint a one-time challenge bound to this user, with a server-set creation time and short expiry.
-    // the ttl is written explicitly (createChallengeSession bypasses the SESSION_TABLE_ITEM_TTL cap),
+    // the lifetime is passed to createChallengeSession, which derives the absolute ttl from the same
+    // timestamp it stores as the challenge creation time (and bypasses the SESSION_TABLE_ITEM_TTL cap),
     // so the challenge lifetime is governed solely by STEP_UP_CHALLENGE_TTL
     const challengeTtlSeconds = readBoundedIntEnv(
       'STEP_UP_CHALLENGE_TTL', DEFAULT_CHALLENGE_TTL_SECONDS, MIN_CHALLENGE_TTL_SECONDS, MAX_CHALLENGE_TTL_SECONDS);
     const challengeId = crypto.randomBytes(16).toString('hex');
-    const nowInSeconds = Math.floor(Date.now() / 1000);
     try {
       const sessionClient = new SessionClient();
       await sessionClient.createChallengeSession(
         `challenge#${challengeId}`,
         sub,
         StepUpStatusEnum.STEP_UP_REQUIRED,
-        nowInSeconds + challengeTtlSeconds,
+        challengeTtlSeconds,
       );
     } catch ( e: any ) {
       log.error(`unable to create step-up challenge - ${e?.name}: ${e?.message}`);

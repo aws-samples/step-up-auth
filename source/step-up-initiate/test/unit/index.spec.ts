@@ -64,7 +64,8 @@ describe('handler', () => {
   });
 
   beforeEach(() => {
-    // the handler mints the challenge via createChallengeSession, which writes an explicit, uncapped ttl
+    // the handler mints the challenge via createChallengeSession, which derives an uncapped ttl from a
+    // single creation timestamp; the 4th argument is the challenge lifetime in seconds
     createSpy = jest
       .spyOn(SessionClient.prototype, 'createChallengeSession')
       .mockResolvedValue('challenge#created');
@@ -133,39 +134,33 @@ describe('handler', () => {
     expect(createSpy.mock.calls[0][0]).toBe(`challenge#${body.challengeId}`);
     expect(createSpy.mock.calls[0][1]).toBe('sub-1');
     expect(createSpy.mock.calls[0][2]).toBe(StepUpStatusEnum.STEP_UP_REQUIRED);
-    // a short, future expiry is passed so the challenge does not linger
-    const nowInSeconds = Math.floor(Date.now() / 1000);
-    expect(createSpy.mock.calls[0][3]).toBeGreaterThan(nowInSeconds);
+    // the challenge lifetime (seconds) is passed, not a pre-computed absolute ttl; the SDK derives the
+    // absolute ttl from the same timestamp it stores as the creation time
+    expect(createSpy.mock.calls[0][3]).toBe(600);
   });
 
   it('writes the challenge with the default STEP_UP_CHALLENGE_TTL (600s) and never via the ttl-capped path', async () => {
     const capSpy = jest.spyOn(SessionClient.prototype, 'createSessionWithParams');
-    const now = Math.floor(Date.now() / 1000);
     const response = await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
 
     expect(response.statusCode).toBe(200);
-    // ttl is creation + 600 by default, written through the explicit-ttl method (not the capped one)
-    expect(createSpy.mock.calls[0][3]).toBeGreaterThanOrEqual(now + 600);
-    expect(createSpy.mock.calls[0][3]).toBeLessThanOrEqual(now + 602);
+    // the default 600s lifetime is passed through the explicit-ttl method, not the capped one
+    expect(createSpy.mock.calls[0][3]).toBe(600);
     expect(capSpy).not.toHaveBeenCalled();
   });
 
   it('honours a valid STEP_UP_CHALLENGE_TTL', async () => {
     process.env.STEP_UP_CHALLENGE_TTL = '300';
-    const now = Math.floor(Date.now() / 1000);
     await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
-    expect(createSpy.mock.calls[0][3]).toBeGreaterThanOrEqual(now + 300);
-    expect(createSpy.mock.calls[0][3]).toBeLessThanOrEqual(now + 302);
+    expect(createSpy.mock.calls[0][3]).toBe(300);
   });
 
   it('falls back to 600 for an invalid or out-of-range STEP_UP_CHALLENGE_TTL', async () => {
     for (const bad of ['abc', '30', '1000', '-5', '600s']) {
       createSpy.mockClear();
       process.env.STEP_UP_CHALLENGE_TTL = bad;
-      const now = Math.floor(Date.now() / 1000);
       await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
-      expect(createSpy.mock.calls[0][3]).toBeGreaterThanOrEqual(now + 600);
-      expect(createSpy.mock.calls[0][3]).toBeLessThanOrEqual(now + 602);
+      expect(createSpy.mock.calls[0][3]).toBe(600);
     }
   });
 
