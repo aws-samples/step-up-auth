@@ -14,6 +14,8 @@ export interface LambdaProps extends cdk.StackProps {
   readonly nodeEnvironment?: string;
   /** step-up session lifetime in seconds (SESSION_TABLE_ITEM_TTL) */
   readonly sessionTableItemTtl: number;
+  /** maximum age in seconds of the re-authentication that step-up accepts (STEP_UP_MAX_REAUTH_AGE) */
+  readonly stepUpMaxReauthAge: number;
   readonly cognitoUserPool: cognito.UserPool;
   readonly cognitoUserPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
@@ -77,6 +79,7 @@ export class LambdaStack extends cdk.Stack {
         COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
         COGNITO_CLIENT_ID: props.cognitoUserPoolClient.userPoolClientId,
         SESSION_TABLE_ITEM_TTL: String(props.sessionTableItemTtl),
+        STEP_UP_MAX_REAUTH_AGE: String(props.stepUpMaxReauthAge),
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''
       }

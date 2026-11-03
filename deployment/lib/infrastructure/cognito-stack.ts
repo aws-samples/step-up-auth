@@ -49,10 +49,14 @@ export class CognitoStack extends cdk.Stack {
     // ----------------------------------------
     //        cognito app client pool
     // ----------------------------------------
+    // Note on step-up hardening: the pool intentionally does NOT remember devices (no
+    // deviceTracking configuration), so a re-authentication always challenges MFA and cannot be
+    // silently skipped with a remembered-device key.  Token revocation is enabled so that a signed-out
+    // session's refresh token can be revoked, shrinking the window in which a stolen token is usable.
     this.appClient = new cognito.UserPoolClient(this, "StepUpAuthWebClient", {
       userPool: this.userPool,
       generateSecret: false,
-      enableTokenRevocation: false,
+      enableTokenRevocation: true,
       refreshTokenValidity: cdk.Duration.days(1),
       authFlows: {
         userPassword: true,

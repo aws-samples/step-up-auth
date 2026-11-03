@@ -11,7 +11,7 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { Infrastructure } from '../lib/infrastructure';
 import { Api } from '../lib/api';
 import { WebUI } from '../lib/webui';
-import { parseSessionTableItemTtl } from '../lib/context';
+import { parseSessionTableItemTtl, parseStepUpMaxReauthAge } from '../lib/context';
 
 // smallest valid zip file: an empty end-of-central-directory record (22 bytes)
 const EMPTY_ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18)]);
@@ -55,6 +55,7 @@ function synth(extraContext: Record<string, string> = {}): Record<string, Templa
     environmentPrefix: 'test',
     nodeEnvironment: 'development',
     sessionTableItemTtl: parseSessionTableItemTtl(app.node.tryGetContext('session_table_item_ttl')),
+    stepUpMaxReauthAge: parseStepUpMaxReauthAge(app.node.tryGetContext('step_up_max_reauth_age')),
     userPool: infrastructure.cognitoUserPool,
     userPoolClient: infrastructure.cognitoUserPoolClient,
     cognitoIssuer: infrastructure.cognitoIssuer,
@@ -140,6 +141,47 @@ describe('authorizer and challenge environment', () => {
     expect(parseSessionTableItemTtl(undefined)).toBe(900);
     expect(parseSessionTableItemTtl('60')).toBe(60);
     expect(parseSessionTableItemTtl(120)).toBe(120);
+  });
+});
+
+// ----------------------------------------
+//   STEP_UP_MAX_REAUTH_AGE (challenge lambda only)
+// ----------------------------------------
+
+describe('step-up re-authentication max age', () => {
+  it('sets STEP_UP_MAX_REAUTH_AGE to 120 by default on the challenge lambda', () => {
+    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthchallengelambda');
+    expect(env.STEP_UP_MAX_REAUTH_AGE).toBe('120');
+  });
+
+  it('takes STEP_UP_MAX_REAUTH_AGE from the step_up_max_reauth_age context', () => {
+    const env = functionEnv(synth({ step_up_max_reauth_age: '60' })['StepUpAuthApi/Lambda'], 'stepupauthchallengelambda');
+    expect(env.STEP_UP_MAX_REAUTH_AGE).toBe('60');
+  });
+
+  it('rejects a step_up_max_reauth_age that is not a positive integer', () => {
+    for (const bad of ['abc', '', '0', '-5', '1.5', '120s', 0, -1]) {
+      expect(() => parseStepUpMaxReauthAge(bad)).toThrow(/positive integer/);
+    }
+    expect(parseStepUpMaxReauthAge(undefined)).toBe(120);
+    expect(parseStepUpMaxReauthAge('60')).toBe(60);
+    expect(parseStepUpMaxReauthAge(90)).toBe(90);
+  });
+});
+
+// ----------------------------------------
+//   Cognito app client hardening (C)
+// ----------------------------------------
+
+describe('cognito app client hardening', () => {
+  it('enables token revocation on the app client', () => {
+    const [client] = Object.values(synth()['StepUpAuthInfra/Cognito'].findResources('AWS::Cognito::UserPoolClient'));
+    expect(client.Properties.EnableTokenRevocation).toBe(true);
+  });
+
+  it('does not configure remembered devices (re-auth always challenges MFA)', () => {
+    const [pool] = Object.values(synth()['StepUpAuthInfra/Cognito'].findResources('AWS::Cognito::UserPool'));
+    expect(pool.Properties.DeviceConfiguration).toBeUndefined();
   });
 });
 

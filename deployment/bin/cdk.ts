@@ -6,7 +6,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Infrastructure } from '../lib/infrastructure';
 import { Api } from '../lib/api';
 import { WebUI } from '../lib/webui';
-import { parseSessionTableItemTtl } from '../lib/context';
+import { parseSessionTableItemTtl, parseStepUpMaxReauthAge } from '../lib/context';
 
 const app = new cdk.App();
 
@@ -34,6 +34,9 @@ const nodeEnvironment: string | undefined =
 // step-up session lifetime in seconds (default 900); throws unless it is a positive integer
 const sessionTableItemTtl: number = parseSessionTableItemTtl(app.node.tryGetContext("session_table_item_ttl"));
 
+// maximum age (seconds) of the re-authentication that step-up will accept (default 120)
+const stepUpMaxReauthAge: number = parseStepUpMaxReauthAge(app.node.tryGetContext("step_up_max_reauth_age"));
+
 /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
 const environment: cdk.Environment = {
   region: awsRegion,
@@ -52,6 +55,7 @@ new Api(app, "StepUpAuthApi", {
   environmentPrefix: environmentPrefix,
   nodeEnvironment: nodeEnvironment,
   sessionTableItemTtl: sessionTableItemTtl,
+  stepUpMaxReauthAge: stepUpMaxReauthAge,
   userPool: infrastructure.cognitoUserPool,
   userPoolClient: infrastructure.cognitoUserPoolClient,
   cognitoIssuer: infrastructure.cognitoIssuer,

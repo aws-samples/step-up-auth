@@ -15,6 +15,8 @@ export interface ApiProps {
   readonly nodeEnvironment?: string;
   /** step-up session lifetime in seconds (SESSION_TABLE_ITEM_TTL) */
   readonly sessionTableItemTtl: number;
+  /** maximum age in seconds of the re-authentication that step-up accepts (STEP_UP_MAX_REAUTH_AGE) */
+  readonly stepUpMaxReauthAge: number;
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
@@ -40,6 +42,7 @@ export class Api extends Construct {
       environmentPrefix: props.environmentPrefix,
       nodeEnvironment: props.nodeEnvironment,
       sessionTableItemTtl: props.sessionTableItemTtl,
+      stepUpMaxReauthAge: props.stepUpMaxReauthAge,
       cognitoUserPool: props.userPool,
       cognitoUserPoolClient: props.userPoolClient,
       cognitoIssuer: props.cognitoIssuer,
