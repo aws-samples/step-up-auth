@@ -8,10 +8,8 @@ import {
   APIGatewayProxyResult } from 'aws-lambda';
 import { Logger } from '@step-up-auth/auth-utils';
 import { Error, Info } from './types';
-import { ChallengeTypesEnum } from './types';
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
-import { SMSChallengeResponder } from './SMSChallengeResponder';
-import { STChallengeResponder } from './STChallengeResponder';
+import { ReauthStepUpResponder } from './ReauthStepUpResponder';
 
 // initialize Logger
 import * as path from 'path';
@@ -24,6 +22,8 @@ const BASE_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
 };
+
+const BEARER_RE = /^Bearer [A-Za-z0-9-_=.]+$/;
 
 /**
  * Return the value of a request header, matching the header name case-insensitively.
@@ -40,8 +40,22 @@ const getHeader = (headers: APIGatewayProxyEventHeaders | null | undefined, name
   return headerName === undefined ? undefined : headers[headerName];
 };
 
+/** Extract the raw token from a `Bearer <token>` header value, or undefined if malformed/absent. */
+const bearerToken = (headerValue: string | undefined): string | undefined => {
+  if (!headerValue || !BEARER_RE.test(headerValue)) {
+    return undefined;
+  }
+  return headerValue.substring(7);
+};
+
 /**
- * Step-up Auth Challenge API Proxy Lambda handler
+ * Step-up Auth Challenge API Proxy Lambda handler.
+ *
+ * Step-up is completed by a *fresh re-authentication*, not by verifying or enrolling an MFA factor.
+ * The client re-authenticates with Cognito (password plus the user's existing MFA) and calls this
+ * endpoint presenting the freshly issued tokens: the access token in the `Authorization` header and
+ * the id token in the `Identification` header.  The request body is not used.  See
+ * `ReauthStepUpResponder` for the checks that must pass.
  * @param event Lambda event object
  * @param context Lambda request context object
  */
@@ -49,110 +63,53 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
   log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
   log.debug('context ', JSON.stringify(context));
 
-  // build api response with info
   const result: APIGatewayProxyResult = <APIGatewayProxyResult>{};
   result.headers = BASE_HEADERS;
   const info: Info = <Info> {};
   info.name = 'Status';
 
-  if (event.path == '/respond-to-challenge' && event.httpMethod == 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: BASE_HEADERS,
-      body: '{}',
-    };
+  if (event.path === '/respond-to-challenge' && event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: BASE_HEADERS, body: '{}' };
   }
 
   if (event.path === '/respond-to-challenge' && event.httpMethod === 'POST') {
-    //Get Authorization Header (header names are matched case-insensitively)
-    let authorizationHeader = '';
-    const authorizationHeaderValue = getHeader(event.headers, 'Authorization');
-    if (authorizationHeaderValue) {
-      authorizationHeader = authorizationHeaderValue;
-      if (
-        !authorizationHeader ||
-        !/^Bearer [A-Za-z0-9-_=.]+$/.test(authorizationHeader)
-      ) {
-        result.statusCode = 401;
-        result.body = JSON.stringify({ code: 'UNAUTHENTICATED' });
-        return result;
-      }
-    } else {
-      {
-        result.statusCode = 401;
-        result.body = JSON.stringify({ code: 'UNAUTHENTICATED' });
-        return result;
-      }
+    // the fresh access token (Authorization) and fresh id token (Identification) are the step-up proof
+    const accessToken = bearerToken(getHeader(event.headers, 'Authorization'));
+    const idToken = bearerToken(getHeader(event.headers, 'Identification'));
+    if (!accessToken || !idToken) {
+      log.warn('missing or malformed Authorization/Identification token');
+      result.statusCode = 401;
+      result.body = JSON.stringify({ code: 'UNAUTHENTICATED' });
+      return result;
     }
-
-    const accessToken = authorizationHeader.substr(7);
 
     const client = new CognitoIdentityProviderClient({
       region: process.env.AWS_REGION ? process.env.AWS_REGION : 'us-east-1',
     });
 
-    if (event.body){
-      const body = JSON.parse(event.body);
-      if (body['step-up-type'] === ChallengeTypesEnum.SMS_STEP_UP && body['challenge-response']){
-        //Validate challenge via VerifyUserAttributeCommand
-        const smsChallengeResponder = new SMSChallengeResponder(accessToken, body['challenge-response'], client);
-        const challengeCompleted = await smsChallengeResponder.validate();
-        if (challengeCompleted){
-          info.details = 'Challenge Successful';
-          result.body = JSON.stringify(info);
-          result.statusCode = 200;
-          return result;
-        } else {
-          info.details = 'Challenge Failed - Code Mismatch or Expired Code';
-          result.body = JSON.stringify(info);
-          result.statusCode = 401;
-          return result;
-        }
-      } else if (
-        (
-          body['step-up-type'] === ChallengeTypesEnum.SOFTWARE_TOKEN_STEP_UP ||
-          body['step-up-type'] === ChallengeTypesEnum.MAYBE_SOFTWARE_TOKEN_STEP_UP
-        ) && body['challenge-response']) {
-        //Validate challenge via VerifySoftwareTokenCommand
-        const stChallengeResponder = new STChallengeResponder(accessToken, body['challenge-response'], client);
-        const challengeCompleted = await stChallengeResponder.validate();
-        if (challengeCompleted){
-          info.details = 'Challenge Successful';
-          result.body = JSON.stringify(info);
-          result.statusCode = 200;
-          return result;
-        } else {
-          info.details = 'Challenge Failed - Code Mismatch or Expired Code';
-          result.body = JSON.stringify(info);
-          result.statusCode = 401;
-          return result;
-        }
-      } else {
-        log.warn('missing required keys in body of request');
-        info.details = 'Challenge Failed - Check Keys in Body of Request';
-        result.body = JSON.stringify(info);
-        result.statusCode = 400;
-        return result;
-      }
-    } else { //If headers exist but the body is missing, we are unable to determine the step up type, so challenge fails
-      log.warn('missing body in request');
-      info.details = 'Challenge Failed - Check Body';
+    const responder = new ReauthStepUpResponder(accessToken, idToken, client);
+    const outcome = await responder.validate();
+
+    if (outcome.ok) {
+      info.details = 'Step-up complete';
+      result.statusCode = 200;
       result.body = JSON.stringify(info);
-      result.statusCode = 400;
       return result;
     }
+
+    info.details = 'Step-up failed';
+    result.statusCode = 401;
+    result.body = JSON.stringify({ ...info, reason: outcome.reason });
+    return result;
   }
 
-  // in all other cases return results generic fault
+  // in all other cases return a generic fault
   const error: Error = <Error> {};
   error.code = 1;
   error.message = 'unhandled request';
   error.type = 'request';
   error.caused = 'handler';
-
   result.body = JSON.stringify(error);
   result.statusCode = 400;
-  console.log('returning result: ' + JSON.stringify(result));
-
   return result;
 };

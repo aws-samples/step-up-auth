@@ -7,13 +7,6 @@ import {
   APIGatewayProxyEventHeaders,
   APIGatewayProxyResult,
 } from 'aws-lambda';
-import {
-  CognitoIdentityProviderClient,
-  GetUserCommand,
-  GetUserAttributeVerificationCodeCommand,
-  GetUserCommandOutput,
-  GetUserCommandInput,
-} from '@aws-sdk/client-cognito-identity-provider';
 import { Logger } from '@step-up-auth/auth-utils';
 
 // initialize Logger
@@ -27,6 +20,8 @@ const BASE_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'OPTIONS,POST,GET',
 };
+
+const BEARER_RE = /^Bearer [A-Za-z0-9-_=.]+$/;
 
 /**
  * Return the value of a request header, matching the header name case-insensitively.
@@ -44,7 +39,13 @@ const getHeader = (headers: APIGatewayProxyEventHeaders | null | undefined, name
 };
 
 /**
- * Step-up Auth Initiate API Proxy Lambda handler
+ * Step-up Auth Initiate API Proxy Lambda handler.
+ *
+ * Step-up is satisfied by a fresh re-authentication (see the respond-to-challenge function), so this
+ * endpoint no longer inspects the user's MFA configuration or sends any code.  It simply tells the
+ * client that it must re-authenticate by returning the `REAUTH_REQUIRED` code.  The client then
+ * re-authenticates with Cognito (password plus the user's existing MFA) and calls
+ * `/respond-to-challenge` with the freshly issued tokens.
  * @param event Lambda event object
  * @param context Lambda request context object
  */
@@ -55,21 +56,15 @@ export const handler = async (
   log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
   log.debug('context ', JSON.stringify(context));
 
-  if (event.path == '/initiate-auth' && event.httpMethod == 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: BASE_HEADERS,
-      body: '{}',
-    };
+  if (event.path === '/initiate-auth' && event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: BASE_HEADERS, body: '{}' };
   }
 
-  if (event.path == '/initiate-auth' && event.httpMethod == 'POST') {
-    // header names are matched case-insensitively
+  if (event.path === '/initiate-auth' && event.httpMethod === 'POST') {
+    // the endpoint is additionally protected by the API Gateway Cognito authorizer (id token); here we
+    // only sanity-check that an access token is present before telling the client to re-authenticate
     const authorizationHeader = getHeader(event.headers, 'Authorization');
-    if (
-      !authorizationHeader ||
-      !/^Bearer [A-Za-z0-9-_=.]+$/.test(authorizationHeader)
-    ) {
+    if (!authorizationHeader || !BEARER_RE.test(authorizationHeader)) {
       return {
         statusCode: 401,
         headers: BASE_HEADERS,
@@ -77,90 +72,11 @@ export const handler = async (
       };
     }
 
-    const accessToken = authorizationHeader.substr(7);
-
-    const client = new CognitoIdentityProviderClient({
-      region: process.env.AWS_REGION ? process.env.AWS_REGION : 'us-east-1',
-    });
-
-    const params: GetUserCommandInput = { AccessToken: accessToken };
-    const user: GetUserCommandOutput = await client.send(
-      new GetUserCommand(params)
-    );
-
-    // dump user response
-    log.debug(`user attributes: ${JSON.stringify(user)}`);
-
-    let useSoftwareToken: boolean;
-
-    if (user.PreferredMfaSetting === 'SOFTWARE_TOKEN_MFA') {
-      useSoftwareToken = true;
-    } else if (user.PreferredMfaSetting === 'SMS_MFA') {
-      useSoftwareToken = false;
-    } else if (
-      user.UserMFASettingList &&
-      user.UserMFASettingList.includes('SOFTWARE_TOKEN_MFA')
-    ) {
-      useSoftwareToken = true;
-    } else if (
-      user.UserMFASettingList &&
-      user.UserMFASettingList.includes('SMS_MFA')
-    ) {
-      useSoftwareToken = false;
-    } else if (
-      user.UserAttributes &&
-      user.UserAttributes.find(
-        (attr) => attr.Name === 'phone_number_verified' && attr.Value === 'true'
-      ) &&
-      user.UserAttributes.find((attr) => attr.Name === 'phone_number')
-    ) {
-      useSoftwareToken = false;
-    } else {
-      return {
-        statusCode: 200,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({ code: 'MAYBE_SOFTWARE_TOKEN_STEP_UP' }),
-      };
-    }
-
-    if (useSoftwareToken) {
-      return {
-        statusCode: 200,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({ code: 'SOFTWARE_TOKEN_STEP_UP' }),
-      };
-    } else {
-      try {
-        await client.send(
-          new GetUserAttributeVerificationCodeCommand({
-            AccessToken: accessToken,
-            AttributeName: 'phone_number',
-          })
-        );
-
-        return {
-          statusCode: 200,
-          headers: BASE_HEADERS,
-          body: JSON.stringify({ code: 'SMS_STEP_UP' }),
-        };
-      } catch ( e: any ) {
-        log.error(`unable to invoke GetUserAttributeVerificationCodeCommand.  error details: ${JSON.stringify(e)}`);
-        if (e.name && e.name === 'LimitExceededException') {
-          return {
-            statusCode: 429,
-            headers: BASE_HEADERS,
-            body: e.errorMessage ? e.errorMessage : `Cognito code verification limit exceeded. Slow Down! Wait ${e.$metadata.totalRetryDelay} seconds before retrying!`,
-          };
-        }
-
-        // in all other cases, return bad request error
-        return {
-          statusCode: 400,
-          headers: BASE_HEADERS,
-          body: 'BAD REQUEST',
-        };
-      }
-    }
+    return {
+      statusCode: 200,
+      headers: BASE_HEADERS,
+      body: JSON.stringify({ code: 'REAUTH_REQUIRED' }),
+    };
   }
 
   return {
