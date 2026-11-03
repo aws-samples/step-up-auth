@@ -4,6 +4,7 @@
 import { describe, expect, it, beforeEach, afterEach, jest } from '@jest/globals';
 import {
   DynamoDBClient,
+  DeleteItemCommand,
   GetItemCommand,
   PutItemCommand,
   UpdateItemCommand } from '@aws-sdk/client-dynamodb';
@@ -124,5 +125,51 @@ describe('SessionClient getSession()', () => {
     const result = new SessionClient().getSession('session-1');
     await expect(result).rejects.toBeInstanceOf(ReadException);
     await expect(result).rejects.not.toBeInstanceOf(RecordNotFoundException);
+  });
+});
+
+describe('SessionClient consumeSession()', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type SendMock = jest.Mock<(...args: any[]) => any>;
+  let sendMock: SendMock;
+
+  beforeEach(() => {
+    sendMock = jest.spyOn(DynamoDBClient.prototype, 'send') as unknown as SendMock;
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('issues a single conditional DeleteItem (attribute_exists) and no prior read', async () => {
+    sendMock.mockResolvedValue({ $metadata: { httpStatusCode: 200 } });
+    const id = await new SessionClient().consumeSession('challenge#abc');
+    expect(id).toBe('challenge#abc');
+    expect(sendMock).toHaveBeenCalledTimes(1);
+    const command = sendMock.mock.calls[0][0] as DeleteItemCommand;
+    expect(command).toBeInstanceOf(DeleteItemCommand);
+    expect(command.input.ConditionExpression).toBe('attribute_exists(sessionId)');
+    expect(command.input.Key!.sessionId.S).toBe('challenge#abc');
+  });
+
+  it('throws RecordNotFoundException when the conditional delete fails (already consumed)', async () => {
+    sendMock.mockRejectedValue(Object.assign(new Error('The conditional request failed'), { name: 'ConditionalCheckFailedException' }));
+    await expect(new SessionClient().consumeSession('challenge#abc')).rejects.toBeInstanceOf(RecordNotFoundException);
+  });
+
+  it('lets exactly one of two concurrent consumers win', async () => {
+    // DynamoDB serialises writes to the item: the first conditional delete succeeds, the second finds
+    // the row gone and fails its attribute_exists condition
+    sendMock
+      .mockResolvedValueOnce({ $metadata: { httpStatusCode: 200 } })
+      .mockRejectedValue(Object.assign(new Error('The conditional request failed'), { name: 'ConditionalCheckFailedException' }));
+
+    const [first, second] = await Promise.allSettled([
+      new SessionClient().consumeSession('challenge#abc'),
+      new SessionClient().consumeSession('challenge#abc'),
+    ]);
+
+    expect(first.status).toBe('fulfilled');
+    expect(second.status).toBe('rejected');
   });
 });

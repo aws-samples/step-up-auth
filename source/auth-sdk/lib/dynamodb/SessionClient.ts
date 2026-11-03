@@ -189,6 +189,40 @@ class SessionClient extends Client {
 
 
   /**
+   * Atomically consume (delete) a session in a single conditional `DeleteItem`, succeeding only if the
+   * row still exists.  This makes a one-time challenge genuinely one-time: when two requests race to
+   * consume the same challenge, DynamoDB serialises the writes to that item, so exactly one
+   * `DeleteItem` finds the row present and succeeds while the other's `attribute_exists` condition
+   * fails and is rejected here.  Only the winning caller may then record a completed step-up session,
+   * so a single challenge can never yield two elevations.  Unlike {@link deleteSession}, it performs no
+   * prior read, which would reintroduce a check-then-act race between the read and the delete.
+   * @param {string} sessionId session id
+   * @returns {string} the consumed session id (returned only to the single winning caller)
+   * @throws {RecordNotFoundException} if the row no longer exists (already consumed, or expired)
+   */
+  public async consumeSession(sessionId: string): Promise<string> {
+    const input: DeleteItemCommandInput = {
+      TableName: this.tableName,
+      Key: {
+        sessionId: { S: sessionId }
+      },
+      // delete only while the row is still present; a concurrent consumer that already deleted it
+      // makes this condition fail, so exactly one caller wins the race
+      ConditionExpression: 'attribute_exists(sessionId)'
+    };
+    try {
+      const output: DeleteItemCommandOutput = await this.client.send(new DeleteItemCommand(input));
+      log.debug(`successfully consumed session.  ${output.$metadata.httpStatusCode}`);
+      return sessionId;
+    } catch ( err: any ) {
+      const errorMessage = `unable to consume session with sessionId: ${sessionId} - ${err.name}: ${err.message}`;
+      log.error(errorMessage);
+      throw new RecordNotFoundException(errorMessage);
+    }
+  }
+
+
+  /**
    * Update session in DynamoDB table
    * @param {Session} session Session object
    * @param {string} lastUpdateTimestamp last update timestamp

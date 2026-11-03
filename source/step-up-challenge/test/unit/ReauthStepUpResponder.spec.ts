@@ -4,7 +4,7 @@
 import { describe, expect, it, beforeAll, beforeEach, afterEach, jest } from '@jest/globals';
 import { CognitoIdentityProviderClient, GetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoToken } from '@step-up-auth/auth-utils';
-import { SessionClient, StepUpStatusEnum, Session } from '@step-up-auth/auth-sdk';
+import { SessionClient, StepUpStatusEnum, Session, RecordNotFoundException } from '@step-up-auth/auth-sdk';
 
 import { ReauthStepUpResponder } from '../../src/ReauthStepUpResponder';
 import { signJwt, testJwk } from '../helpers/jwt';
@@ -46,7 +46,7 @@ describe('ReauthStepUpResponder.validate()', () => {
   let sendMock: SendMock;
   let client: CognitoIdentityProviderClient;
   let getSessionSpy: ReturnType<typeof jest.spyOn>;
-  let deleteSessionSpy: ReturnType<typeof jest.spyOn>;
+  let consumeSessionSpy: ReturnType<typeof jest.spyOn>;
   let createSpy: ReturnType<typeof jest.spyOn>;
   const originalEnv = { ...process.env };
 
@@ -65,7 +65,7 @@ describe('ReauthStepUpResponder.validate()', () => {
     sendMock.mockResolvedValue({ PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA', UserMFASettingList: ['SOFTWARE_TOKEN_MFA'] });
     createSpy = jest.spyOn(SessionClient.prototype, 'createSessionWithParams').mockResolvedValue('fresh-jti-1');
     getSessionSpy = jest.spyOn(SessionClient.prototype, 'getSession').mockResolvedValue(challengeRow());
-    deleteSessionSpy = jest.spyOn(SessionClient.prototype, 'deleteSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
+    consumeSessionSpy = jest.spyOn(SessionClient.prototype, 'consumeSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
   });
 
   afterEach(() => {
@@ -79,9 +79,9 @@ describe('ReauthStepUpResponder.validate()', () => {
     const result = await responder.validate();
 
     expect(result.ok).toBe(true);
-    // the challenge was loaded and then consumed so it cannot be replayed
+    // the challenge was loaded and then atomically consumed so it cannot be replayed
     expect(getSessionSpy).toHaveBeenCalledWith(`challenge#${CHALLENGE_ID}`);
-    expect(deleteSessionSpy).toHaveBeenCalledWith(`challenge#${CHALLENGE_ID}`);
+    expect(consumeSessionSpy).toHaveBeenCalledWith(`challenge#${CHALLENGE_ID}`);
     // GetUser was called with the fresh access token
     expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetUserCommand);
     // a STEP_UP_COMPLETED session was written keyed by the fresh token's jti
@@ -107,7 +107,7 @@ describe('ReauthStepUpResponder.validate()', () => {
     const result = await responder.validate();
 
     expect(result).toEqual({ ok: false, reason: 'NO_CHALLENGE' });
-    expect(deleteSessionSpy).not.toHaveBeenCalled();
+    expect(consumeSessionSpy).not.toHaveBeenCalled();
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -118,7 +118,7 @@ describe('ReauthStepUpResponder.validate()', () => {
     const result = await responder.validate();
 
     expect(result).toEqual({ ok: false, reason: 'CHALLENGE_SUB_MISMATCH' });
-    expect(deleteSessionSpy).not.toHaveBeenCalled();
+    expect(consumeSessionSpy).not.toHaveBeenCalled();
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -131,7 +131,7 @@ describe('ReauthStepUpResponder.validate()', () => {
     const result = await responder.validate();
 
     expect(result).toEqual({ ok: false, reason: 'STALE_AUTH' });
-    expect(deleteSessionSpy).not.toHaveBeenCalled();
+    expect(consumeSessionSpy).not.toHaveBeenCalled();
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -147,7 +147,7 @@ describe('ReauthStepUpResponder.validate()', () => {
     const result = await responder.validate();
 
     expect(result).toEqual({ ok: false, reason: 'STALE_AUTH' });
-    expect(deleteSessionSpy).not.toHaveBeenCalled();
+    expect(consumeSessionSpy).not.toHaveBeenCalled();
     expect(createSpy).not.toHaveBeenCalled();
   });
 
@@ -169,8 +169,24 @@ describe('ReauthStepUpResponder.validate()', () => {
 
     expect(result).toEqual({ ok: false, reason: 'MFA_NOT_ENROLLED' });
     // the challenge is only consumed on success, so a failed MFA check leaves it intact
-    expect(deleteSessionSpy).not.toHaveBeenCalled();
+    expect(consumeSessionSpy).not.toHaveBeenCalled();
     expect(createSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects a concurrent replay of the same challenge so only one completion wins (CHALLENGE_CONSUME_FAILED)', async () => {
+    // two completions race on one challenge: the first consumes it, the second finds it already gone.
+    // consumeSession is a single conditional delete, so exactly one caller wins and writes completion.
+    consumeSessionSpy
+      .mockResolvedValueOnce(`challenge#${CHALLENGE_ID}`)
+      .mockRejectedValue(new RecordNotFoundException('challenge already consumed'));
+
+    const first = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+    const second = await new ReauthStepUpResponder(freshAccess({ jti: 'fresh-jti-2' }), freshId(), client, CHALLENGE_ID).validate();
+
+    expect(first).toEqual({ ok: true });
+    expect(second).toEqual({ ok: false, reason: 'CHALLENGE_CONSUME_FAILED' });
+    // only the winning completion wrote a STEP_UP_COMPLETED row
+    expect(createSpy).toHaveBeenCalledTimes(1);
   });
 
   it('rejects when the Authorization token is not an access token (BAD_ACCESS_TOKEN)', async () => {

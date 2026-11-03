@@ -190,11 +190,13 @@ class ReauthStepUpResponder {
       return { ok: false, reason: 'MFA_NOT_ENROLLED' };
     }
 
-    // 7. consume the one-time challenge so it can never be replayed
+    // 7. consume the one-time challenge so it can never be replayed.  consumeSession is a single
+    //    conditional delete, so if two completions race on the same challenge exactly one wins here and
+    //    goes on to write the completed row; the loser's condition fails and it is rejected.
     try {
-      await sessionClient.deleteSession(`challenge#${this.challengeId}`);
+      await sessionClient.consumeSession(`challenge#${this.challengeId}`);
     } catch ( e: any ) {
-      log.error(`step-up rejected: unable to consume challenge - ${e?.name}: ${e?.message}`);
+      log.warn(`step-up rejected: challenge already consumed or could not be consumed - ${e?.name}: ${e?.message}`);
       return { ok: false, reason: 'CHALLENGE_CONSUME_FAILED' };
     }
 

@@ -79,7 +79,7 @@ describe('handler', () => {
     sendMock.mockResolvedValue({ PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA', UserMFASettingList: ['SOFTWARE_TOKEN_MFA'] });
     jest.spyOn(SessionClient.prototype, 'createSessionWithParams').mockResolvedValue('fresh-jti-1');
     jest.spyOn(SessionClient.prototype, 'getSession').mockResolvedValue(challengeRow());
-    jest.spyOn(SessionClient.prototype, 'deleteSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
+    jest.spyOn(SessionClient.prototype, 'consumeSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
   });
 
   afterEach(() => {
