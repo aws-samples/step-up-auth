@@ -65,6 +65,11 @@ export class LambdaStack extends cdk.Stack {
         COGNITO_ISSUER: props.cognitoIssuer,
         COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
         COGNITO_CLIENT_ID: props.cognitoUserPoolClient.userPoolClientId,
+        // the initiate function constructs the shared auth-sdk SessionClient, whose base Client reads
+        // SESSION_TABLE_ITEM_TTL on construction; set it so the function does not fall back and warn.
+        // it does NOT affect the challenge lifetime: createChallengeSession bypasses the ttl cap and is
+        // governed solely by STEP_UP_CHALLENGE_TTL.
+        SESSION_TABLE_ITEM_TTL: String(props.sessionTableItemTtl),
         // the initiate function mints the one-time challenge, so it reads the challenge lifetime
         STEP_UP_CHALLENGE_TTL: String(props.stepUpChallengeTtl),
         ENV_PREFIX: props.environmentPrefix || '',

@@ -3,8 +3,8 @@
 
 import { describe, expect, it, beforeAll, beforeEach, afterEach, jest } from '@jest/globals';
 import { Context, APIGatewayProxyEvent } from 'aws-lambda';
-import { CognitoToken } from '@step-up-auth/auth-utils';
-import { SessionClient, StepUpStatusEnum } from '@step-up-auth/auth-sdk';
+import { CognitoToken, Logger } from '@step-up-auth/auth-utils';
+import { SessionClient, Session, StepUpStatusEnum } from '@step-up-auth/auth-sdk';
 
 import { handler } from '../../src/index';
 import { signJwt, testJwk } from '../helpers/jwt';
@@ -187,5 +187,98 @@ describe('handler', () => {
         BASE_CONTEXT
       )
     ).toEqual({ statusCode: 404, headers: HEADERS, body: '{"code":"NOT_FOUND"}' });
+  });
+});
+
+// ----------------------------------------
+//   challenge lifetime is independent of SESSION_TABLE_ITEM_TTL
+// ----------------------------------------
+// The handler mints challenges via SessionClient.createChallengeSession, which derives the row's
+// absolute ttl from the SAME creation timestamp it stores and deliberately bypasses the
+// SESSION_TABLE_ITEM_TTL cap (computeTtl).  So even when SESSION_TABLE_ITEM_TTL is set small (60s) on
+// the initiate function, a 600s challenge still expires at creation + 600, never clamped to
+// creation + 60.  Here we let the REAL createChallengeSession run and intercept at the lower-level
+// createSession to read the Session row it would have persisted.
+describe('challenge lifetime is independent of SESSION_TABLE_ITEM_TTL', () => {
+  const originalEnv = { ...process.env };
+  let createSessionSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeAll(() => {
+    process.env.COGNITO_USER_POOL_ARN = `arn:aws:cognito-idp:us-east-1:123456789012:userpool/${USER_POOL_ID}`;
+    process.env.COGNITO_CLIENT_ID = CLIENT_ID;
+    CognitoToken.getVerifier(USER_POOL_ID, 'access', CLIENT_ID).cacheJwks({ keys: [testJwk] });
+  });
+
+  beforeEach(() => {
+    // a small SESSION_TABLE_ITEM_TTL would clamp the challenge if it ran through computeTtl
+    process.env.SESSION_TABLE_ITEM_TTL = '60';
+    process.env.STEP_UP_CHALLENGE_TTL = '600';
+    // intercept the real createChallengeSession just before it persists, capturing the Session row
+    createSessionSpy = jest
+      .spyOn(SessionClient.prototype, 'createSession')
+      .mockResolvedValue('challenge#created');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    process.env = { ...originalEnv, COGNITO_USER_POOL_ARN: process.env.COGNITO_USER_POOL_ARN, COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID };
+  });
+
+  it('writes a challenge whose ttl is creation + 600 even with SESSION_TABLE_ITEM_TTL set to 60', async () => {
+    const response = await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
+    expect(response.statusCode).toBe(200);
+
+    expect(createSessionSpy).toHaveBeenCalledTimes(1);
+    const session = createSessionSpy.mock.calls[0][0] as Session;
+    const createEpoch = Math.floor(Date.parse(session.createTimestamp as string) / 1000);
+    // governed solely by STEP_UP_CHALLENGE_TTL (600), never shortened to creation + 60
+    expect(session.ttl).toBe(createEpoch + 600);
+  });
+});
+
+// ----------------------------------------
+//   SESSION_TABLE_ITEM_TTL not-set warning
+// ----------------------------------------
+// The shared auth-sdk Client reads SESSION_TABLE_ITEM_TTL through readBoundedIntEnv when it is
+// constructed (the handler does `new SessionClient()` on every invocation), and that parser logs a
+// not-set warning when the variable is missing.  With the variable now set on the initiate function
+// (lambda-stack.ts and deploy-awscli.sh) that warning must no longer fire.
+describe('SESSION_TABLE_ITEM_TTL not-set warning', () => {
+  const originalEnv = { ...process.env };
+  let warnSpy: ReturnType<typeof jest.spyOn>;
+
+  beforeAll(() => {
+    process.env.COGNITO_USER_POOL_ARN = `arn:aws:cognito-idp:us-east-1:123456789012:userpool/${USER_POOL_ID}`;
+    process.env.COGNITO_CLIENT_ID = CLIENT_ID;
+    CognitoToken.getVerifier(USER_POOL_ID, 'access', CLIENT_ID).cacheJwks({ keys: [testJwk] });
+  });
+
+  beforeEach(() => {
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    jest.spyOn(SessionClient.prototype, 'createChallengeSession').mockResolvedValue('challenge#created');
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    process.env = { ...originalEnv, COGNITO_USER_POOL_ARN: process.env.COGNITO_USER_POOL_ARN, COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID };
+  });
+
+  const sessionNotSetWarnings = (): unknown[] =>
+    warnSpy.mock.calls.filter((call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('SESSION_TABLE_ITEM_TTL is not set'));
+
+  it('does not warn that SESSION_TABLE_ITEM_TTL is not set when the variable is set to a valid value', async () => {
+    process.env.SESSION_TABLE_ITEM_TTL = '900';
+    process.env.STEP_UP_CHALLENGE_TTL = '600';
+    const response = await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
+    expect(response.statusCode).toBe(200);
+    expect(sessionNotSetWarnings()).toHaveLength(0);
+  });
+
+  it('warns that SESSION_TABLE_ITEM_TTL is not set when it is missing (the regression this fix prevents)', async () => {
+    delete process.env.SESSION_TABLE_ITEM_TTL;
+    process.env.STEP_UP_CHALLENGE_TTL = '600';
+    const response = await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
+    expect(response.statusCode).toBe(200);
+    expect(sessionNotSetWarnings().length).toBeGreaterThan(0);
   });
 });

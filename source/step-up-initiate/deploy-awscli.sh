@@ -15,15 +15,34 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     echo "  COGNITO_UP_ARN"
     echo "  COGNITO_CLIENT_ID"
     echo "Optional environment variables"
+    echo "  SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900, range 60-900)"
     echo "  STEP_UP_CHALLENGE_TTL (one-time challenge lifetime in seconds, default 600, range 60-900)"
     echo "  DEPLOYMENT_ENV (NODE_ENV of the function, default production)"
     echo "For an existing function, the script replaces the function's environment variables with these values and then updates the code."
     exit 1
 fi
 
+# The string-length guard (-gt 3) runs before any numeric comparison for each value.  Every step-up
+# maximum here is at most 3 digits (900), so an oversized all-digit value is rejected on length and the
+# shell's integer arithmetic never overflows on a huge input.
+
+# optional: SESSION_TABLE_ITEM_TTL (seconds) sets the step-up session lifetime read by the shared
+# auth-sdk SessionClient.  default 900, range 60-900, the same as the CDK deployment.  it does not
+# affect the challenge lifetime (createChallengeSession bypasses the cap); setting it just stops the
+# shared client falling back to its default and logging a warning on every invocation.
+if [ -z "${SESSION_TABLE_ITEM_TTL}" ]; then
+  SESSION_TABLE_ITEM_TTL=900
+fi
+case "${SESSION_TABLE_ITEM_TTL}" in
+  ''|*[!0-9]*) session_ttl_is_number=no ;;
+  *) session_ttl_is_number=yes ;;
+esac
+if [ "${session_ttl_is_number}" != "yes" ] || [ "${#SESSION_TABLE_ITEM_TTL}" -gt 3 ] || [ "${SESSION_TABLE_ITEM_TTL}" -lt 60 ] || [ "${SESSION_TABLE_ITEM_TTL}" -gt 900 ]; then
+  echo "SESSION_TABLE_ITEM_TTL must be a whole number of seconds between 60 and 900, got '${SESSION_TABLE_ITEM_TTL}'"
+  exit 1
+fi
+
 # optional: STEP_UP_CHALLENGE_TTL (seconds) sets the one-time challenge lifetime.  default 600, range 60-900, the same as the CDK deployment.
-# the string-length guard (-gt 3) runs before the numeric comparison so an oversized all-digit value is
-# rejected on length and the shell's integer arithmetic never overflows (900, the max, is 3 digits)
 if [ -z "${STEP_UP_CHALLENGE_TTL}" ]; then
   STEP_UP_CHALLENGE_TTL=600
 fi
@@ -58,6 +77,7 @@ echo "AWS_LAMBDA_ROLE_ARN: ${AWS_LAMBDA_ROLE_ARN}"
 echo "ENV_PREFIX: ${ENV_PREFIX}"
 echo "COGNITO_UP_ARN: ${COGNITO_UP_ARN}"
 echo "COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}"
+echo "SESSION_TABLE_ITEM_TTL: ${SESSION_TABLE_ITEM_TTL}"
 echo "STEP_UP_CHALLENGE_TTL: ${STEP_UP_CHALLENGE_TTL}"
 echo "WORKING_DIR: ${WORKING_DIR}"
 echo "NODE_ENV: ${NODE_ENV}"
@@ -99,7 +119,7 @@ echo "create/update lambda"
 module_zip_path=`ls ${module_zip}/${dist_name_zip}`
 
 # function environment, used when the function is created and when it is updated
-lambda_environment="Variables={NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN},COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID},STEP_UP_CHALLENGE_TTL=${STEP_UP_CHALLENGE_TTL}}"
+lambda_environment="Variables={NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN},COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID},SESSION_TABLE_ITEM_TTL=${SESSION_TABLE_ITEM_TTL},STEP_UP_CHALLENGE_TTL=${STEP_UP_CHALLENGE_TTL}}"
 
 # check if lambda exits:
 # if yes, run "aws update-function-configuration", wait for it to finish, then run "aws update-function-code"

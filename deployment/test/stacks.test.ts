@@ -119,10 +119,15 @@ function functionEnv(template: Template, prefix: string): Record<string, unknown
   return matches[0][1].Properties.Environment.Variables;
 }
 
-describe('authorizer and challenge environment', () => {
+describe('authorizer, challenge and initiate environment', () => {
+  // SESSION_TABLE_ITEM_TTL is set on every function that constructs the shared auth-sdk SessionClient:
+  // the authorizer and challenge responder (which read it for the step-up session rows) and the
+  // initiate function (whose SessionClient reads it on construction even though its challenges bypass
+  // the cap).  Setting it everywhere stops the shared client falling back and warning on each call.
   const lambdaEnvs = (templates: Record<string, Template>) => [
     functionEnv(templates['StepUpAuthApi/APIG'], 'stepupauthauthorizerlambda'),
     functionEnv(templates['StepUpAuthApi/Lambda'], 'stepupauthchallengelambda'),
+    functionEnv(templates['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda'),
   ];
 
   it('sets SESSION_TABLE_ITEM_TTL to 900 by default, plus COGNITO_CLIENT_ID', () => {
@@ -149,9 +154,9 @@ describe('authorizer and challenge environment', () => {
     expect(env.COGNITO_ISSUER).toBe('https://cognito-idp.us-east-1.amazonaws.com');
   });
 
-  it('does not place SESSION_TABLE_ITEM_TTL on the initiate lambda (it mints challenges with an explicit ttl)', () => {
-    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda');
-    expect(env.SESSION_TABLE_ITEM_TTL).toBeUndefined();
+  it('places SESSION_TABLE_ITEM_TTL on the initiate lambda so its shared SessionClient does not fall back and warn', () => {
+    expect(functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda').SESSION_TABLE_ITEM_TTL).toBe('900');
+    expect(functionEnv(synth({ session_table_item_ttl: '120' })['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda').SESSION_TABLE_ITEM_TTL).toBe('120');
   });
 
   it('rejects a session_table_item_ttl outside the 60-900 range, not a whole number, or oversized', () => {
