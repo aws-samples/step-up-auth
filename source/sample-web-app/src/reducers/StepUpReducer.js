@@ -4,6 +4,7 @@
 import {
   STEP_UP_ERROR,
   STEP_UP_INITIATED,
+  STEP_UP_REAUTH_USERNAME,
   STEP_UP_REAUTH_MFA_REQUIRED,
   STEP_UP_COMPLETED,
   STEP_UP_CLEAR } from "../actions/Types";
@@ -16,6 +17,22 @@ export default function (state = {}, action) {
         error: action.payload.message,
         errorOrigin: action.payload.origin,
         steppedUp: false,
+      };
+
+      // a session-ending failure returns the flow to the password stage so the user can start over
+      if (action.payload.resetMfa) {
+        returnProps.reauthMfaRequired = false;
+        returnProps.reauthMfaType = null;
+      }
+
+      console.log("StepUpReducer. action: ", action);
+      console.log("StepUpReducer. returning props: ", returnProps);
+      return returnProps;
+    }
+    case STEP_UP_REAUTH_USERNAME: {
+      const returnProps = {
+        ...state,
+        reauthUsername: action.payload.username,
       };
 
       console.log("StepUpReducer. action: ", action);
@@ -61,6 +78,7 @@ export default function (state = {}, action) {
         stepUpType: action.payload.code,
         reauthMfaRequired: false,
         reauthMfaType: null,
+        reauthUsername: null,
       };
 
       console.log("StepUpReducer. action: ", action);
@@ -76,6 +94,7 @@ export default function (state = {}, action) {
         stepUpType: null,
         reauthMfaRequired: false,
         reauthMfaType: null,
+        reauthUsername: null,
       };
 
       console.log("StepUpReducer. action: ", action);

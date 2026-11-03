@@ -7,10 +7,42 @@ import { post } from "aws-amplify/api";
 import {
   STEP_UP_ERROR,
   STEP_UP_INITIATED,
+  STEP_UP_REAUTH_USERNAME,
   STEP_UP_REAUTH_MFA_REQUIRED,
   STEP_UP_COMPLETED,
   STEP_UP_CLEAR } from "./Types";
 import config from "../config";
+
+// The backend reports an unusable one-time challenge (missing, expired, or not found) with this reason
+// on a 401 response; the client must re-initiate rather than retry the same challenge.
+const NO_CHALLENGE = "NO_CHALLENGE";
+
+// Read the step-up failure reason the challenge API returns in the body of a non-2xx response.
+// Amplify v6 REST errors carry the HTTP response as err.response = { statusCode, headers, body }.
+function stepUpFailureReason(err) {
+  try {
+    const body = err && err.response && err.response.body;
+    const parsed = body ? JSON.parse(body) : {};
+    return parsed && parsed.reason;
+  } catch (e) {
+    return undefined;
+  }
+}
+
+// Dispatch a re-authentication failure. A wrong MFA code (CodeMismatchException) keeps the code stage
+// so the user can retry the same open challenge; any other failure (a session-ending error, an expired
+// challenge, a bad password) returns the flow to the password stage so the user can start over.
+function dispatchReauthError(dispatch, err) {
+  const keepCodeStage = !!(err && err.name === "CodeMismatchException");
+  const message = stepUpFailureReason(err) === NO_CHALLENGE
+    ? "Your step-up challenge is no longer valid. Please invoke the API again."
+    : ((err && err.message) || "Re-authentication failed.");
+  console.log("StepUpActions.dispatchReauthError(): error response:", err);
+  dispatch({
+    type: STEP_UP_ERROR,
+    payload: { message, origin: STEP_UP_COMPLETED, resetMfa: !keepCodeStage }
+  });
+}
 
 // Current access and id tokens as JWT strings (fetchAuthSession() refreshes
 // expired tokens). Rejects when there is no signed-in user, like the Amplify v4
@@ -170,22 +202,27 @@ export function stepUpReauthStart(mock, password) {
       return Promise.resolve(true);
     }
 
-    // read the current username before signing out, so we re-authenticate as the same user
+    // Resolve the username without depending on the current session: signing out (which this flow does
+    // before signIn) empties the session, so a retry after a wrong password would otherwise find no
+    // user. Read it from the session on the first attempt and remember it (username only, never the
+    // password) so retries re-authenticate the same user.
     return fetchAuthSession()
       .then((session) => {
         const tokens = session && session.tokens;
-        const username = (tokens && tokens.accessToken && tokens.accessToken.payload && tokens.accessToken.payload.username)
+        const fromSession = (tokens && tokens.accessToken && tokens.accessToken.payload && tokens.accessToken.payload.username)
           || (tokens && tokens.idToken && tokens.idToken.payload && tokens.idToken.payload["cognito:username"]);
+        const remembered = getState().stepUp && getState().stepUp.reauthUsername;
+        const username = fromSession || remembered;
         if (!username) {
           throw new Error("No current user");
+        }
+        if (username !== remembered) {
+          dispatch({ type: STEP_UP_REAUTH_USERNAME, payload: { username } });
         }
         return signOut().then(() => signIn({ username, password }));
       })
       .then((output) => advanceReauthStep(output, dispatch, getState))
-      .catch((err) => {
-        console.log("StepUpActions.stepUpReauthStart(): error response:", err);
-        dispatch({ type: STEP_UP_ERROR, payload: { message: err.message, origin: STEP_UP_COMPLETED } });
-      });
+      .catch((err) => dispatchReauthError(dispatch, err));
   };
 }
 
@@ -210,9 +247,6 @@ export function stepUpReauthConfirm(mock, mfaCode) {
         }
         return completeStepUp(dispatch, getState);
       })
-      .catch((err) => {
-        console.log("StepUpActions.stepUpReauthConfirm(): error response:", err);
-        dispatch({ type: STEP_UP_ERROR, payload: { message: err.message, origin: STEP_UP_COMPLETED } });
-      });
+      .catch((err) => dispatchReauthError(dispatch, err));
   };
 }

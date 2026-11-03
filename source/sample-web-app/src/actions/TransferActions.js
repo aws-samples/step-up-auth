@@ -9,7 +9,8 @@ import {
   TRANSFER_CLEAR,
   INFO_SUCCESS,
   INFO_ERROR,
-  INFO_CLEAR } from "./Types";
+  INFO_CLEAR,
+  UNAUTH_USER } from "./Types";
 import config from "../config";
 import { getSessionTokens, stepUpInitiate } from "./StepUpActions";
 // import store from '../store';
@@ -125,6 +126,12 @@ export function transfer(mock) {
     })
     // catch fetchAuthSession() error
     .catch((err) => {
+      // no session at all (e.g. the user abandoned step-up after a failed password): return to login
+      // rather than leaving a dead screen. Main.jsx redirects when auth.authenticated is false.
+      if (err && err.message === 'No current user') {
+        dispatch({ type: UNAUTH_USER });
+        return;
+      }
       dispatch({
         type: TRANSFER_ERROR,
         payload: {
@@ -197,6 +204,11 @@ export function info(mock) {
     })
     // catch fetchAuthSession() error
     .catch((err) => {
+      // no session at all: return to login rather than leaving a dead screen (see transfer() above)
+      if (err && err.message === 'No current user') {
+        dispatch({ type: UNAUTH_USER });
+        return;
+      }
       dispatch({
         type: INFO_ERROR,
         payload: {
