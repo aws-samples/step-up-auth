@@ -70,6 +70,35 @@ describe('SessionClient ttl', () => {
     });
   });
 
+  describe('createChallengeSession()', () => {
+    it('writes the explicit ttl verbatim (challenge creation + STEP_UP_CHALLENGE_TTL)', async () => {
+      const now = nowInSeconds();
+      const explicitTtl = now + 600;
+      await new SessionClient().createChallengeSession('challenge#abc', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, explicitTtl);
+      expect(putTtl()).toBe(explicitTtl);
+    });
+
+    it('is NOT capped by SESSION_TABLE_ITEM_TTL, even when that is set smaller than the challenge ttl', async () => {
+      // if the challenge ttl were run through computeTtl, a small SESSION_TABLE_ITEM_TTL would shorten it
+      process.env.SESSION_TABLE_ITEM_TTL = '60';
+      const now = nowInSeconds();
+      const explicitTtl = now + 600;
+      await new SessionClient().createChallengeSession('challenge#abc', 'user-1', StepUpStatusEnum.STEP_UP_REQUIRED, explicitTtl);
+      // the full 600s ttl is preserved, not clamped to now + 60
+      expect(putTtl()).toBe(explicitTtl);
+    });
+
+    it('records the challenge subject and a STEP_UP_REQUIRED status', async () => {
+      const now = nowInSeconds();
+      await new SessionClient().createChallengeSession('challenge#abc', 'sub-1', StepUpStatusEnum.STEP_UP_REQUIRED, now + 600);
+      const command = sendMock.mock.calls[0][0] as PutItemCommand;
+      expect(command).toBeInstanceOf(PutItemCommand);
+      expect(command.input.Item!.sessionId.S).toBe('challenge#abc');
+      expect(command.input.Item!.userId.S).toBe('sub-1');
+      expect(command.input.Item!.stepUpStatus.S).toBe(StepUpStatusEnum.STEP_UP_REQUIRED);
+    });
+  });
+
   describe('updateSession()', () => {
     it('caps ttl at the token exp when the token expires first', async () => {
       const tokenExp = nowInSeconds() + 120;

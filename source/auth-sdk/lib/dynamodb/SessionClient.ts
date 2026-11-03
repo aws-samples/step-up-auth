@@ -117,6 +117,45 @@ class SessionClient extends Client {
   }
 
   /**
+   * Create a one-time step-up challenge row with an EXPLICIT, absolute ttl (epoch seconds).
+   *
+   * Unlike {@link createSessionWithParams}, the ttl is written verbatim and is deliberately NOT run
+   * through {@link computeTtl}.  So the challenge lifetime is governed solely by the caller (the
+   * initiate Lambda's `STEP_UP_CHALLENGE_TTL`) and can never be silently shortened by
+   * `SESSION_TABLE_ITEM_TTL`, even if that variable is ever set on the initiate Lambda.  A challenge
+   * carries no access token, so there is no token `exp` to cap against; its only control is this ttl.
+   * @param {string} sessionId session id (e.g. `challenge#<challengeId>`)
+   * @param {string} userId user id (Cognito `sub`) the challenge is minted for
+   * @param {StepUpStatusEnum} stepUpStatus step-up status to store on the row
+   * @param {number} ttlEpochSeconds absolute ttl in epoch seconds, written to the row as-is
+   * @returns {string} session id
+   * @throws {CreateException} If DynamoDB operation fails, throw 'Error'
+   */
+  public async createChallengeSession(sessionId: string, userId: string, stepUpStatus: StepUpStatusEnum, ttlEpochSeconds: number): Promise<string> {
+    // get current timestamp
+    const now = new Date();
+    // create the challenge record
+    const session: Session = new Session(sessionId, userId, undefined, undefined, '', stepUpStatus);
+    // set timestamps
+    session.createTimestamp = now.toISOString();
+    session.lastUpdateTimestamp = now.toISOString();
+    // write the ttl exactly as given.  intentionally bypasses computeTtl() so SESSION_TABLE_ITEM_TTL
+    // can never shorten a challenge below STEP_UP_CHALLENGE_TTL
+    session.ttl = ttlEpochSeconds;
+
+    // create the record
+    try {
+      const id = await this.createSession(session);
+      return id;
+    }
+    catch ( err: any ) {
+      const errorMessage = `error occurred during put item operation - ${err.name}: ${err.message}`;
+      log.error(errorMessage);
+      throw new CreateException(errorMessage);
+    }
+  }
+
+  /**
    * Retrieve item from session table for given session id
    * @param {string} sessionId session id
    * @return {Session} Session object
