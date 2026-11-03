@@ -4,3 +4,4 @@
 export { Logger } from './lib/Logger';
 export { CognitoToken } from './lib/CognitoToken';
 export { TokenException } from './lib/exception/TokenException';
+export { readBoundedIntEnv } from './lib/env';
