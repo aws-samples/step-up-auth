@@ -4,6 +4,7 @@
 import {
   STEP_UP_ERROR,
   STEP_UP_INITIATED,
+  STEP_UP_REAUTH_MFA_REQUIRED,
   STEP_UP_COMPLETED,
   STEP_UP_CLEAR } from "../actions/Types";
 
@@ -29,6 +30,22 @@ export default function (state = {}, action) {
         steppedUp: false,
         stepUpType: action.payload.code,
         challengeId: action.payload.challengeId,
+        reauthMfaRequired: false,
+        reauthMfaType: null,
+      };
+
+      console.log("StepUpReducer. action: ", action);
+      console.log("StepUpReducer. returning props: ", returnProps);
+      return returnProps;
+    }
+    case STEP_UP_REAUTH_MFA_REQUIRED: {
+      const returnProps = {
+        ...state,
+        error: "",
+        errorOrigin: "",
+        steppedUp: false,
+        reauthMfaRequired: true,
+        reauthMfaType: action.payload.mfaType,
       };
 
       console.log("StepUpReducer. action: ", action);
@@ -42,6 +59,8 @@ export default function (state = {}, action) {
         errorOrigin: "",
         steppedUp: true,
         stepUpType: action.payload.code,
+        reauthMfaRequired: false,
+        reauthMfaType: null,
       };
 
       console.log("StepUpReducer. action: ", action);
@@ -55,6 +74,8 @@ export default function (state = {}, action) {
         errorOrigin: "",
         steppedUp: false,
         stepUpType: null,
+        reauthMfaRequired: false,
+        reauthMfaType: null,
       };
 
       console.log("StepUpReducer. action: ", action);

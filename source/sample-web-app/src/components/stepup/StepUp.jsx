@@ -8,7 +8,8 @@ import { Container, Segment, Label, Button } from 'semantic-ui-react';
 import PropTypes from 'prop-types';
 import {
   stepUpInitiate as stepUpInitiateAction,
-  stepUpRespondToChallenge as stepUpRespondToChallengeAction } from '../../actions/StepUpActions';
+  stepUpReauthStart as stepUpReauthStartAction,
+  stepUpReauthConfirm as stepUpReauthConfirmAction } from '../../actions/StepUpActions';
 import {
   info as infoAction,
   clearInfo,
@@ -35,7 +36,8 @@ class StepUp extends Component {
     // this.parseAuthenticateHeader = this.parseAuthenticateHeader.bind(this);
     this.transfer = this.transfer.bind(this);
     this.info = this.info.bind(this);
-    this.handleReauth = this.handleReauth.bind(this);
+    this.handleReauthPassword = this.handleReauthPassword.bind(this);
+    this.handleReauthMfaCode = this.handleReauthMfaCode.bind(this);
     this.renderChallengeResponse = this.renderChallengeResponse.bind(this);
     this.renderThrottleError = this.renderThrottleError.bind(this);
   }
@@ -58,9 +60,14 @@ class StepUp extends Component {
     this.props.infoAction(false);
   }
 
-  async handleReauth(password, mfaCode) {
-    console.log('StepUp.handleReauth(): re-authenticating to complete step-up');
-    this.props.stepUpRespondToChallengeAction(false, password, mfaCode);
+  async handleReauthPassword(password) {
+    console.log('StepUp.handleReauthPassword(): starting re-authentication');
+    this.props.stepUpReauthStartAction(false, password);
+  }
+
+  async handleReauthMfaCode(mfaCode) {
+    console.log('StepUp.handleReauthMfaCode(): confirming MFA code to complete step-up');
+    this.props.stepUpReauthConfirmAction(false, mfaCode);
   }
 
   renderChallengeResponse() {
@@ -68,7 +75,9 @@ class StepUp extends Component {
       stepUpError,
       stepUpErrorOrigin,
       steppedUp,
-      stepUpType
+      stepUpType,
+      reauthMfaRequired,
+      reauthMfaType
     } = this.props;
 
     console.log('StepUp.renderChallengeResponse(): stepUpError: ', stepUpError);
@@ -94,7 +103,12 @@ class StepUp extends Component {
     else {
       renderElements = (
         <Segment basic textAlign={"center"}>
-          <ReauthHandler handleReauth={this.handleReauth} />
+          <ReauthHandler
+            mfaRequired={reauthMfaRequired}
+            mfaType={reauthMfaType}
+            onPassword={this.handleReauthPassword}
+            onMfaCode={this.handleReauthMfaCode}
+          />
           { stepUpError && stepUpError.length > 0 && (
             <Container>
               <Label as="span" color="orange">
@@ -211,8 +225,11 @@ StepUp.propTypes = {
   stepUpType: PropTypes.string,
   stepUpError: PropTypes.string,
   stepUpErrorOrigin: PropTypes.string,
+  reauthMfaRequired: PropTypes.bool,
+  reauthMfaType: PropTypes.string,
   stepUpInitiateAction: PropTypes.func,
-  stepUpRespondToChallengeAction: PropTypes.func,
+  stepUpReauthStartAction: PropTypes.func,
+  stepUpReauthConfirmAction: PropTypes.func,
   infoAction: PropTypes.func,
   clearInfo: PropTypes.func,
   transferAction: PropTypes.func,
@@ -231,6 +248,8 @@ function mapStateToProps(state) {
     stepUpType: state.stepUp.stepUpType,
     stepUpError: state.stepUp.error,
     stepUpErrorOrigin: state.stepUp.errorOrigin,
+    reauthMfaRequired: state.stepUp.reauthMfaRequired,
+    reauthMfaType: state.stepUp.reauthMfaType,
     // stepUpType: state.stepUp.step
     transferData: state.transfer.transferData,
     transferError: state.transfer.transferError,
@@ -245,7 +264,8 @@ function mapDispatchToProps(dispatch) {
   return {
     ...bindActionCreators({
       stepUpInitiateAction,
-      stepUpRespondToChallengeAction,
+      stepUpReauthStartAction,
+      stepUpReauthConfirmAction,
       infoAction,
       clearInfo,
       transferAction,

@@ -18,6 +18,7 @@ export const AUTH_ERROR_CLEAR = 'auth_error_clear';
 // Actions related to step-up authentication
 export const STEP_UP_ERROR = 'step_up_error';
 export const STEP_UP_INITIATED = 'step_up_initiated';
+export const STEP_UP_REAUTH_MFA_REQUIRED = 'step_up_reauth_mfa_required';
 export const STEP_UP_COMPLETED = 'step_up_completed';
 export const STEP_UP_CLEAR = 'step_up_clear';
 

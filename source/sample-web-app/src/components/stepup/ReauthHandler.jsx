@@ -7,8 +7,11 @@ import { Container, Form, Label } from 'semantic-ui-react';
 
 import "./ChallengeHandler.css";
 
-// Step-up re-authentication form: the user confirms their identity by re-entering their password and a
-// current MFA code.  This produces a freshly authenticated session that the backend accepts for step-up.
+// Step-up re-authentication form.  Re-authentication is a two-stage flow so it works for every
+// configured factor: first the user re-enters their password (stage 1); Cognito then creates the MFA
+// challenge and, for SMS, delivers the one-time code.  Only then does the form collect the MFA code
+// (stage 2).  Collecting the code up front would be impossible for SMS, where the code does not exist
+// until the challenge is created.
 class ReauthHandler extends Component {
   constructor(props) {
     super(props);
@@ -18,7 +21,8 @@ class ReauthHandler extends Component {
       mfaCode: ''
     };
 
-    this.handleSubmit = this.handleSubmit.bind(this);
+    this.handlePasswordSubmit = this.handlePasswordSubmit.bind(this);
+    this.handleMfaSubmit = this.handleMfaSubmit.bind(this);
     this.handleChange = this.handleChange.bind(this);
   }
 
@@ -26,33 +30,55 @@ class ReauthHandler extends Component {
     this.setState({ [name]: value });
   }
 
-  handleSubmit() {
-    const { password, mfaCode } = this.state;
-    this.props.handleReauth(password, mfaCode);
+  handlePasswordSubmit() {
+    this.props.onPassword(this.state.password);
+  }
+
+  handleMfaSubmit() {
+    this.props.onMfaCode(this.state.mfaCode);
   }
 
   render() {
     const { password, mfaCode } = this.state;
+    const { mfaRequired, mfaType } = this.props;
 
+    // stage 2: Cognito has created the MFA challenge (and sent the SMS code, when SMS is the factor)
+    if (mfaRequired) {
+      const codeHint = mfaType === 'SMS_MFA'
+        ? 'Enter the code just sent to your phone by SMS.'
+        : 'Enter the current code from your authenticator app.';
+
+      return (
+        <Container>
+          <Label pointing="below" color="orange">{codeHint}</Label>
+          <Form onSubmit={this.handleMfaSubmit}>
+            <Form.Group>
+              <Form.Input
+                placeholder="MFA code"
+                name="mfaCode"
+                value={mfaCode}
+                onChange={this.handleChange}
+              />
+              <Form.Button content="Verify" />
+            </Form.Group>
+          </Form>
+        </Container>
+      );
+    }
+
+    // stage 1: collect the password and start re-authentication
     return (
       <Container>
         <Label pointing="below" color="orange">
-          Re-authenticate to continue: re-enter your password and a current MFA code from your
-          authenticator app.
+          Re-authenticate to continue: re-enter your password.
         </Label>
-        <Form onSubmit={this.handleSubmit}>
+        <Form onSubmit={this.handlePasswordSubmit}>
           <Form.Group>
             <Form.Input
               type="password"
               placeholder="Password"
               name="password"
               value={password}
-              onChange={this.handleChange}
-            />
-            <Form.Input
-              placeholder="MFA code"
-              name="mfaCode"
-              value={mfaCode}
               onChange={this.handleChange}
             />
             <Form.Button content="Re-authenticate" />
@@ -65,7 +91,10 @@ class ReauthHandler extends Component {
 
 // Runtime type checking for React props
 ReauthHandler.propTypes = {
-  handleReauth: PropTypes.func
+  mfaRequired: PropTypes.bool,
+  mfaType: PropTypes.string,
+  onPassword: PropTypes.func,
+  onMfaCode: PropTypes.func
 };
 
 export default ReauthHandler;
