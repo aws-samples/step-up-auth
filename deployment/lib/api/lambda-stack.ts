@@ -16,6 +16,12 @@ export interface LambdaProps extends cdk.StackProps {
   readonly sessionTableItemTtl: number;
   /** maximum age in seconds of the re-authentication that step-up accepts (STEP_UP_MAX_REAUTH_AGE) */
   readonly stepUpMaxReauthAge: number;
+  /** one-time step-up challenge lifetime in seconds (STEP_UP_CHALLENGE_TTL) */
+  readonly stepUpChallengeTtl: number;
+  /** clock-skew allowance in seconds for the "authenticated after the challenge" check (STEP_UP_CHALLENGE_CLOCK_SKEW) */
+  readonly stepUpChallengeClockSkew: number;
+  /** clock-skew allowance in seconds for the future-dated auth_time guard (STEP_UP_REAUTH_FUTURE_SKEW) */
+  readonly stepUpReauthFutureSkew: number;
   readonly cognitoUserPool: cognito.UserPool;
   readonly cognitoUserPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
@@ -59,6 +65,8 @@ export class LambdaStack extends cdk.Stack {
         COGNITO_ISSUER: props.cognitoIssuer,
         COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
         COGNITO_CLIENT_ID: props.cognitoUserPoolClient.userPoolClientId,
+        // the initiate function mints the one-time challenge, so it reads the challenge lifetime
+        STEP_UP_CHALLENGE_TTL: String(props.stepUpChallengeTtl),
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''
       }
@@ -85,6 +93,9 @@ export class LambdaStack extends cdk.Stack {
         COGNITO_CLIENT_ID: props.cognitoUserPoolClient.userPoolClientId,
         SESSION_TABLE_ITEM_TTL: String(props.sessionTableItemTtl),
         STEP_UP_MAX_REAUTH_AGE: String(props.stepUpMaxReauthAge),
+        // the challenge responder enforces the timing checks, so it reads both clock-skew allowances
+        STEP_UP_CHALLENGE_CLOCK_SKEW: String(props.stepUpChallengeClockSkew),
+        STEP_UP_REAUTH_FUTURE_SKEW: String(props.stepUpReauthFutureSkew),
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''
       }

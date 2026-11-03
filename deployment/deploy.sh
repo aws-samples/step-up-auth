@@ -74,6 +74,22 @@ context_args=(
 if [ -n "${SESSION_TABLE_ITEM_TTL}" ]; then
     context_args+=(--context "session_table_item_ttl=${SESSION_TABLE_ITEM_TTL}")
 fi
+# optional: STEP_UP_MAX_REAUTH_AGE (seconds) max age of the accepted re-authentication (default 120, range 30-900)
+if [ -n "${STEP_UP_MAX_REAUTH_AGE}" ]; then
+    context_args+=(--context "step_up_max_reauth_age=${STEP_UP_MAX_REAUTH_AGE}")
+fi
+# optional: STEP_UP_CHALLENGE_TTL (seconds) one-time challenge lifetime (default 600, range 60-900)
+if [ -n "${STEP_UP_CHALLENGE_TTL}" ]; then
+    context_args+=(--context "step_up_challenge_ttl=${STEP_UP_CHALLENGE_TTL}")
+fi
+# optional: STEP_UP_CHALLENGE_CLOCK_SKEW (seconds) "authenticated after the challenge" allowance (default 1, range 0-10)
+if [ -n "${STEP_UP_CHALLENGE_CLOCK_SKEW}" ]; then
+    context_args+=(--context "step_up_challenge_clock_skew=${STEP_UP_CHALLENGE_CLOCK_SKEW}")
+fi
+# optional: STEP_UP_REAUTH_FUTURE_SKEW (seconds) future-dated auth_time allowance (default 5, range 0-10)
+if [ -n "${STEP_UP_REAUTH_FUTURE_SKEW}" ]; then
+    context_args+=(--context "step_up_reauth_future_skew=${STEP_UP_REAUTH_FUTURE_SKEW}")
+fi
 
 # optional: CDK_TAGS="key=value key=value" tags the bootstrap and application stacks
 tag_args=()

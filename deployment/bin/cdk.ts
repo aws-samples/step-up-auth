@@ -6,7 +6,12 @@ import * as cdk from 'aws-cdk-lib';
 import { Infrastructure } from '../lib/infrastructure';
 import { Api } from '../lib/api';
 import { WebUI } from '../lib/webui';
-import { parseSessionTableItemTtl, parseStepUpMaxReauthAge } from '../lib/context';
+import {
+  parseSessionTableItemTtl,
+  parseStepUpMaxReauthAge,
+  parseStepUpChallengeTtl,
+  parseStepUpChallengeClockSkew,
+  parseStepUpReauthFutureSkew } from '../lib/context';
 
 const app = new cdk.App();
 
@@ -34,8 +39,17 @@ const nodeEnvironment: string | undefined =
 // step-up session lifetime in seconds (default 900); throws unless it is a positive integer
 const sessionTableItemTtl: number = parseSessionTableItemTtl(app.node.tryGetContext("session_table_item_ttl"));
 
-// maximum age (seconds) of the re-authentication that step-up will accept (default 120)
+// maximum age (seconds) of the re-authentication that step-up will accept (default 120, range 30-900)
 const stepUpMaxReauthAge: number = parseStepUpMaxReauthAge(app.node.tryGetContext("step_up_max_reauth_age"));
+
+// one-time step-up challenge lifetime in seconds (default 600, range 60-900)
+const stepUpChallengeTtl: number = parseStepUpChallengeTtl(app.node.tryGetContext("step_up_challenge_ttl"));
+
+// clock-skew allowance (seconds) for the "authenticated after the challenge" check (default 1, range 0-10)
+const stepUpChallengeClockSkew: number = parseStepUpChallengeClockSkew(app.node.tryGetContext("step_up_challenge_clock_skew"));
+
+// clock-skew allowance (seconds) for the future-dated auth_time guard (default 5, range 0-10)
+const stepUpReauthFutureSkew: number = parseStepUpReauthFutureSkew(app.node.tryGetContext("step_up_reauth_future_skew"));
 
 /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
 const environment: cdk.Environment = {
@@ -56,6 +70,9 @@ new Api(app, "StepUpAuthApi", {
   nodeEnvironment: nodeEnvironment,
   sessionTableItemTtl: sessionTableItemTtl,
   stepUpMaxReauthAge: stepUpMaxReauthAge,
+  stepUpChallengeTtl: stepUpChallengeTtl,
+  stepUpChallengeClockSkew: stepUpChallengeClockSkew,
+  stepUpReauthFutureSkew: stepUpReauthFutureSkew,
   userPool: infrastructure.cognitoUserPool,
   userPoolClient: infrastructure.cognitoUserPoolClient,
   cognitoIssuer: infrastructure.cognitoIssuer,

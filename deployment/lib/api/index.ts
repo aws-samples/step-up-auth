@@ -17,6 +17,12 @@ export interface ApiProps {
   readonly sessionTableItemTtl: number;
   /** maximum age in seconds of the re-authentication that step-up accepts (STEP_UP_MAX_REAUTH_AGE) */
   readonly stepUpMaxReauthAge: number;
+  /** one-time step-up challenge lifetime in seconds (STEP_UP_CHALLENGE_TTL) */
+  readonly stepUpChallengeTtl: number;
+  /** clock-skew allowance in seconds for the "authenticated after the challenge" check (STEP_UP_CHALLENGE_CLOCK_SKEW) */
+  readonly stepUpChallengeClockSkew: number;
+  /** clock-skew allowance in seconds for the future-dated auth_time guard (STEP_UP_REAUTH_FUTURE_SKEW) */
+  readonly stepUpReauthFutureSkew: number;
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
@@ -43,6 +49,9 @@ export class Api extends Construct {
       nodeEnvironment: props.nodeEnvironment,
       sessionTableItemTtl: props.sessionTableItemTtl,
       stepUpMaxReauthAge: props.stepUpMaxReauthAge,
+      stepUpChallengeTtl: props.stepUpChallengeTtl,
+      stepUpChallengeClockSkew: props.stepUpChallengeClockSkew,
+      stepUpReauthFutureSkew: props.stepUpReauthFutureSkew,
       cognitoUserPool: props.userPool,
       cognitoUserPoolClient: props.userPoolClient,
       cognitoIssuer: props.cognitoIssuer,

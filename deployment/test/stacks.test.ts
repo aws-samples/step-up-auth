@@ -11,7 +11,12 @@ import { Template } from 'aws-cdk-lib/assertions';
 import { Infrastructure } from '../lib/infrastructure';
 import { Api } from '../lib/api';
 import { WebUI } from '../lib/webui';
-import { parseSessionTableItemTtl, parseStepUpMaxReauthAge } from '../lib/context';
+import {
+  parseSessionTableItemTtl,
+  parseStepUpMaxReauthAge,
+  parseStepUpChallengeTtl,
+  parseStepUpChallengeClockSkew,
+  parseStepUpReauthFutureSkew } from '../lib/context';
 
 // smallest valid zip file: an empty end-of-central-directory record (22 bytes)
 const EMPTY_ZIP = Buffer.concat([Buffer.from([0x50, 0x4b, 0x05, 0x06]), Buffer.alloc(18)]);
@@ -56,6 +61,9 @@ function synth(extraContext: Record<string, string> = {}): Record<string, Templa
     nodeEnvironment: 'development',
     sessionTableItemTtl: parseSessionTableItemTtl(app.node.tryGetContext('session_table_item_ttl')),
     stepUpMaxReauthAge: parseStepUpMaxReauthAge(app.node.tryGetContext('step_up_max_reauth_age')),
+    stepUpChallengeTtl: parseStepUpChallengeTtl(app.node.tryGetContext('step_up_challenge_ttl')),
+    stepUpChallengeClockSkew: parseStepUpChallengeClockSkew(app.node.tryGetContext('step_up_challenge_clock_skew')),
+    stepUpReauthFutureSkew: parseStepUpReauthFutureSkew(app.node.tryGetContext('step_up_reauth_future_skew')),
     userPool: infrastructure.cognitoUserPool,
     userPoolClient: infrastructure.cognitoUserPoolClient,
     cognitoIssuer: infrastructure.cognitoIssuer,
@@ -167,13 +175,87 @@ describe('step-up re-authentication max age', () => {
     expect(env.STEP_UP_MAX_REAUTH_AGE).toBe('60');
   });
 
-  it('rejects a step_up_max_reauth_age that is not a positive integer', () => {
-    for (const bad of ['abc', '', '0', '-5', '1.5', '120s', 0, -1]) {
-      expect(() => parseStepUpMaxReauthAge(bad)).toThrow(/positive integer/);
+  it('does not place STEP_UP_MAX_REAUTH_AGE on the initiate lambda', () => {
+    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda');
+    expect(env.STEP_UP_MAX_REAUTH_AGE).toBeUndefined();
+  });
+
+  it('rejects a step_up_max_reauth_age outside the 30-900 range or not a whole number', () => {
+    for (const bad of ['abc', '', '0', '-5', '1.5', '120s', '29', '901', 0, -1, 1000]) {
+      expect(() => parseStepUpMaxReauthAge(bad)).toThrow(/between 30 and 900/);
     }
+    expect(() => synth({ step_up_max_reauth_age: '29' })).toThrow(/between 30 and 900/);
     expect(parseStepUpMaxReauthAge(undefined)).toBe(120);
-    expect(parseStepUpMaxReauthAge('60')).toBe(60);
+    expect(parseStepUpMaxReauthAge('30')).toBe(30);
+    expect(parseStepUpMaxReauthAge('900')).toBe(900);
     expect(parseStepUpMaxReauthAge(90)).toBe(90);
+  });
+});
+
+// ----------------------------------------
+//   STEP_UP_CHALLENGE_TTL (initiate lambda only)
+// ----------------------------------------
+
+describe('step-up challenge lifetime', () => {
+  it('sets STEP_UP_CHALLENGE_TTL to 600 by default on the initiate lambda only', () => {
+    const templates = synth();
+    expect(functionEnv(templates['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda').STEP_UP_CHALLENGE_TTL).toBe('600');
+    // it is not placed on the challenge lambda, which does not read it
+    expect(functionEnv(templates['StepUpAuthApi/Lambda'], 'stepupauthchallengelambda').STEP_UP_CHALLENGE_TTL).toBeUndefined();
+  });
+
+  it('takes STEP_UP_CHALLENGE_TTL from the step_up_challenge_ttl context', () => {
+    const env = functionEnv(synth({ step_up_challenge_ttl: '300' })['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda');
+    expect(env.STEP_UP_CHALLENGE_TTL).toBe('300');
+  });
+
+  it('rejects a step_up_challenge_ttl outside the 60-900 range or not a whole number', () => {
+    for (const bad of ['abc', '', '0', '-5', '1.5', '600s', '59', '901', 0, 1000]) {
+      expect(() => parseStepUpChallengeTtl(bad)).toThrow(/between 60 and 900/);
+    }
+    expect(() => synth({ step_up_challenge_ttl: '59' })).toThrow(/between 60 and 900/);
+    expect(parseStepUpChallengeTtl(undefined)).toBe(600);
+    expect(parseStepUpChallengeTtl('60')).toBe(60);
+    expect(parseStepUpChallengeTtl('900')).toBe(900);
+  });
+});
+
+// ----------------------------------------
+//   STEP_UP_CHALLENGE_CLOCK_SKEW and STEP_UP_REAUTH_FUTURE_SKEW (challenge lambda only)
+// ----------------------------------------
+
+describe('step-up clock-skew allowances', () => {
+  it('sets STEP_UP_CHALLENGE_CLOCK_SKEW to 1 and STEP_UP_REAUTH_FUTURE_SKEW to 5 by default on the challenge lambda', () => {
+    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthchallengelambda');
+    expect(env.STEP_UP_CHALLENGE_CLOCK_SKEW).toBe('1');
+    expect(env.STEP_UP_REAUTH_FUTURE_SKEW).toBe('5');
+  });
+
+  it('does not place either clock-skew allowance on the initiate lambda', () => {
+    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda');
+    expect(env.STEP_UP_CHALLENGE_CLOCK_SKEW).toBeUndefined();
+    expect(env.STEP_UP_REAUTH_FUTURE_SKEW).toBeUndefined();
+  });
+
+  it('takes both allowances from their context keys', () => {
+    const env = functionEnv(
+      synth({ step_up_challenge_clock_skew: '0', step_up_reauth_future_skew: '10' })['StepUpAuthApi/Lambda'],
+      'stepupauthchallengelambda');
+    expect(env.STEP_UP_CHALLENGE_CLOCK_SKEW).toBe('0');
+    expect(env.STEP_UP_REAUTH_FUTURE_SKEW).toBe('10');
+  });
+
+  it('rejects clock-skew values outside the 0-10 range or not a whole number', () => {
+    for (const bad of ['abc', '', '-1', '11', '1.5', '5s', -1, 11]) {
+      expect(() => parseStepUpChallengeClockSkew(bad)).toThrow(/between 0 and 10/);
+      expect(() => parseStepUpReauthFutureSkew(bad)).toThrow(/between 0 and 10/);
+    }
+    expect(() => synth({ step_up_challenge_clock_skew: '11' })).toThrow(/between 0 and 10/);
+    expect(() => synth({ step_up_reauth_future_skew: '-1' })).toThrow(/between 0 and 10/);
+    expect(parseStepUpChallengeClockSkew(undefined)).toBe(1);
+    expect(parseStepUpReauthFutureSkew(undefined)).toBe(5);
+    expect(parseStepUpChallengeClockSkew('0')).toBe(0);
+    expect(parseStepUpReauthFutureSkew('10')).toBe(10);
   });
 });
 

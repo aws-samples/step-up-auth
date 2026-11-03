@@ -65,6 +65,18 @@ context_args=(
 if [ -n "${SESSION_TABLE_ITEM_TTL}" ]; then
     context_args+=(--context "session_table_item_ttl=${SESSION_TABLE_ITEM_TTL}")
 fi
+if [ -n "${STEP_UP_MAX_REAUTH_AGE}" ]; then
+    context_args+=(--context "step_up_max_reauth_age=${STEP_UP_MAX_REAUTH_AGE}")
+fi
+if [ -n "${STEP_UP_CHALLENGE_TTL}" ]; then
+    context_args+=(--context "step_up_challenge_ttl=${STEP_UP_CHALLENGE_TTL}")
+fi
+if [ -n "${STEP_UP_CHALLENGE_CLOCK_SKEW}" ]; then
+    context_args+=(--context "step_up_challenge_clock_skew=${STEP_UP_CHALLENGE_CLOCK_SKEW}")
+fi
+if [ -n "${STEP_UP_REAUTH_FUTURE_SKEW}" ]; then
+    context_args+=(--context "step_up_reauth_future_skew=${STEP_UP_REAUTH_FUTURE_SKEW}")
+fi
 
 
 #####################################################################
