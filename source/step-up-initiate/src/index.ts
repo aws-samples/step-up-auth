@@ -7,7 +7,9 @@ import {
   APIGatewayProxyEventHeaders,
   APIGatewayProxyResult,
 } from 'aws-lambda';
-import { Logger } from '@step-up-auth/auth-utils';
+import { Logger, CognitoToken } from '@step-up-auth/auth-utils';
+import { SessionClient, StepUpStatusEnum } from '@step-up-auth/auth-sdk';
+import * as crypto from 'crypto';
 
 // initialize Logger
 import * as path from 'path';
@@ -22,6 +24,14 @@ const BASE_HEADERS = {
 };
 
 const BEARER_RE = /^Bearer [A-Za-z0-9-_=.]+$/;
+
+/**
+ * Lifetime, in seconds, of a one-time step-up re-authentication challenge.  It only needs to survive
+ * long enough for the user to re-authenticate before `/respond-to-challenge` consumes it, so it is kept
+ * short.  The challenge's creation time (not this ttl) is the load-bearing control: completion requires
+ * a fresh `auth_time` strictly after the challenge was created.
+ */
+const CHALLENGE_EXPIRY_SECONDS = 600;
 
 /**
  * Return the value of a request header, matching the header name case-insensitively.
@@ -42,10 +52,13 @@ const getHeader = (headers: APIGatewayProxyEventHeaders | null | undefined, name
  * Step-up Auth Initiate API Proxy Lambda handler.
  *
  * Step-up is satisfied by a fresh re-authentication (see the respond-to-challenge function), so this
- * endpoint no longer inspects the user's MFA configuration or sends any code.  It simply tells the
- * client that it must re-authenticate by returning the `REAUTH_REQUIRED` code.  The client then
- * re-authenticates with Cognito (password plus the user's existing MFA) and calls
- * `/respond-to-challenge` with the freshly issued tokens.
+ * endpoint no longer inspects the user's MFA configuration or sends any code.  Instead it mints a
+ * one-time, server-bound challenge: a random `challengeId` and a short-lived challenge record (keyed by
+ * `challenge#<challengeId>`) that stores the caller's `sub` and a server-set creation time.  The client
+ * then re-authenticates with Cognito (password plus the user's existing MFA) and calls
+ * `/respond-to-challenge` with the freshly issued tokens and the `challengeId`.  Completion is accepted
+ * only when the fresh token's `auth_time` is strictly after this challenge's creation time, so a stolen
+ * or merely refreshed token (whose `auth_time` predates the challenge) can never satisfy step-up.
  * @param event Lambda event object
  * @param context Lambda request context object
  */
@@ -62,7 +75,7 @@ export const handler = async (
 
   if (event.path === '/initiate-auth' && event.httpMethod === 'POST') {
     // the endpoint is additionally protected by the API Gateway Cognito authorizer (id token); here we
-    // only sanity-check that an access token is present before telling the client to re-authenticate
+    // read the caller's access token so we can bind the one-time challenge to that user's `sub`
     const authorizationHeader = getHeader(event.headers, 'Authorization');
     if (!authorizationHeader || !BEARER_RE.test(authorizationHeader)) {
       return {
@@ -72,10 +85,50 @@ export const handler = async (
       };
     }
 
+    // decode (not verify) the subject from the access token; the gateway Cognito authorizer has already
+    // vetted the request, and `/respond-to-challenge` re-checks this `sub` against the *verified* fresh
+    // token before accepting step-up
+    let sub = '';
+    try {
+      sub = new CognitoToken(authorizationHeader).getSubClaim();
+    } catch ( e ) {
+      sub = '';
+    }
+    if (!sub) {
+      return {
+        statusCode: 401,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({ code: 'UNAUTHENTICATED' }),
+      };
+    }
+
+    // mint a one-time challenge bound to this user, with a server-set creation time and short expiry
+    const challengeId = crypto.randomBytes(16).toString('hex');
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    try {
+      const sessionClient = new SessionClient();
+      await sessionClient.createSessionWithParams(
+        `challenge#${challengeId}`,
+        sub,
+        undefined,
+        undefined,
+        '',
+        StepUpStatusEnum.STEP_UP_REQUIRED,
+        nowInSeconds + CHALLENGE_EXPIRY_SECONDS,
+      );
+    } catch ( e: any ) {
+      log.error(`unable to create step-up challenge - ${e?.name}: ${e?.message}`);
+      return {
+        statusCode: 500,
+        headers: BASE_HEADERS,
+        body: JSON.stringify({ code: 'CHALLENGE_CREATE_FAILED' }),
+      };
+    }
+
     return {
       statusCode: 200,
       headers: BASE_HEADERS,
-      body: JSON.stringify({ code: 'REAUTH_REQUIRED' }),
+      body: JSON.stringify({ code: 'REAUTH_REQUIRED', challengeId }),
     };
   }
 
