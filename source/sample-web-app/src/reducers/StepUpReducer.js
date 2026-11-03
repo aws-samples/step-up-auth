@@ -28,6 +28,7 @@ export default function (state = {}, action) {
         errorOrigin: "",
         steppedUp: false,
         stepUpType: action.payload.code,
+        challengeId: action.payload.challengeId,
       };
 
       console.log("StepUpReducer. action: ", action);

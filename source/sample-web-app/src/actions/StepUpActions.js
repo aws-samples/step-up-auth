@@ -44,7 +44,7 @@ export function stepUpInitiate(mock) {
     return new Promise((resolve, reject) => {
 
       if (mock) {
-        dispatch({ type: STEP_UP_INITIATED, payload: { code: "REAUTH_REQUIRED" } });
+        dispatch({ type: STEP_UP_INITIATED, payload: { code: "REAUTH_REQUIRED", challengeId: "mock-challenge" } });
         resolve(true);
         return;
       }
@@ -66,7 +66,10 @@ export function stepUpInitiate(mock) {
           .then((response) => {
             console.log("StepUpActions.stepUpInitiate(): response:", response);
             if (response && response.data && response.data.code === "REAUTH_REQUIRED") {
-              dispatch({ type: STEP_UP_INITIATED, payload: { code: response.data.code } });
+              dispatch({
+                type: STEP_UP_INITIATED,
+                payload: { code: response.data.code, challengeId: response.data.challengeId }
+              });
               resolve(true);
             } else {
               dispatch({
@@ -118,13 +121,16 @@ function reauthenticate(username, password, mfaCode) {
 
 // Step-up - respond to challenge by re-authenticating and presenting the fresh tokens
 export function stepUpRespondToChallenge(mock, password, mfaCode) {
-  return function (dispatch) {
+  return function (dispatch, getState) {
     console.log("StepUpActions.stepUpRespondToChallenge(): re-authenticating");
 
     if (mock) {
       dispatch({ type: STEP_UP_COMPLETED, payload: { details: STEP_UP_COMPLETED } });
       return;
     }
+
+    // the one-time challenge id minted by /initiate-auth; the backend binds completion to it
+    const challengeId = getState().stepUp && getState().stepUp.challengeId;
 
     // read the current username before signing out, so we can re-authenticate as the same user
     fetchAuthSession()
@@ -147,7 +153,8 @@ export function stepUpRespondToChallenge(mock, password, mfaCode) {
             headers: {
               Identification: `Bearer ${idToken}`,
               Authorization: `Bearer ${accessToken}`,
-            }
+            },
+            body: { challengeId }
           }
         }).response;
       })
