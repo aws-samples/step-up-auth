@@ -21,15 +21,17 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     exit 1
 fi
 
-# optional: STEP_UP_CHALLENGE_TTL (seconds) sets the one-time challenge lifetime.  default 600, range 60-900, the same as the CDK deployment
+# optional: STEP_UP_CHALLENGE_TTL (seconds) sets the one-time challenge lifetime.  default 600, range 60-900, the same as the CDK deployment.
+# the string-length guard (-gt 3) runs before the numeric comparison so an oversized all-digit value is
+# rejected on length and the shell's integer arithmetic never overflows (900, the max, is 3 digits)
 if [ -z "${STEP_UP_CHALLENGE_TTL}" ]; then
   STEP_UP_CHALLENGE_TTL=600
 fi
 case "${STEP_UP_CHALLENGE_TTL}" in
-  *[!0-9]*) challenge_ttl_is_number=no ;;
+  ''|*[!0-9]*) challenge_ttl_is_number=no ;;
   *) challenge_ttl_is_number=yes ;;
 esac
-if [ "${challenge_ttl_is_number}" != "yes" ] || [ "${STEP_UP_CHALLENGE_TTL}" -lt 60 ] || [ "${STEP_UP_CHALLENGE_TTL}" -gt 900 ]; then
+if [ "${challenge_ttl_is_number}" != "yes" ] || [ "${#STEP_UP_CHALLENGE_TTL}" -gt 3 ] || [ "${STEP_UP_CHALLENGE_TTL}" -lt 60 ] || [ "${STEP_UP_CHALLENGE_TTL}" -gt 900 ]; then
   echo "STEP_UP_CHALLENGE_TTL must be a whole number of seconds between 60 and 900, got '${STEP_UP_CHALLENGE_TTL}'"
   exit 1
 fi

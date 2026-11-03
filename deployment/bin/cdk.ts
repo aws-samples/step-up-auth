@@ -36,7 +36,7 @@ if (environmentPrefix && environmentPrefix.length <= 0) { // check for zero leng
 const nodeEnvironment: string | undefined =
   process.env.NODE_ENV || app.node.tryGetContext("node_env") || 'development'; // default to 'development' mode
 
-// step-up session lifetime in seconds (default 900); throws unless it is a positive integer
+// step-up session lifetime in seconds (default 900, range 60-900); throws unless it is in range
 const sessionTableItemTtl: number = parseSessionTableItemTtl(app.node.tryGetContext("session_table_item_ttl"));
 
 // maximum age (seconds) of the re-authentication that step-up will accept (default 120, range 30-900)

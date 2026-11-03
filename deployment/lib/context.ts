@@ -3,6 +3,9 @@
 
 /** Default step-up session lifetime in seconds (15 minutes). */
 export const DEFAULT_SESSION_TABLE_ITEM_TTL = 900;
+/** Inclusive range for `session_table_item_ttl` (seconds): the step-up session lifetime. */
+export const MIN_SESSION_TABLE_ITEM_TTL = 60;
+export const MAX_SESSION_TABLE_ITEM_TTL = 900;
 
 /** Default maximum age, in seconds, of the re-authentication that step-up will accept (2 minutes). */
 export const DEFAULT_STEP_UP_MAX_REAUTH_AGE = 120;
@@ -44,20 +47,16 @@ function parseBoundedSeconds(key: string, value: unknown, defaultValue: number, 
 }
 
 /**
- * Parse the `session_table_item_ttl` CDK context value (seconds).
- * Returns the default when the value is not set, and throws when it is not a
- * positive integer.
+ * Parse the `session_table_item_ttl` CDK context value (seconds): the step-up session lifetime (the
+ * STEP_UP_COMPLETED elevation row and the STEP_UP_REQUIRED marker).  Returns the default (900) when the
+ * value is not set, and throws unless it is a whole number within the allowed range (60 to 900
+ * seconds).  The ceiling matches the other step-up windows and keeps a completed elevation from being
+ * widened toward the access token's full remaining lifetime.  `parseBoundedSeconds` rejects an
+ * oversized all-digit value (which would otherwise convert to `Infinity`) rather than accepting it.
  */
 export function parseSessionTableItemTtl(value: unknown): number {
-  if (value === undefined || value === null) {
-    return DEFAULT_SESSION_TABLE_ITEM_TTL;
-  }
-  const text = String(value).trim();
-  const ttl = Number(text);
-  if (!/^\d+$/.test(text) || !Number.isSafeInteger(ttl) || ttl <= 0) {
-    throw new Error(`session_table_item_ttl must be a positive integer (seconds), got '${text}'.`);
-  }
-  return ttl;
+  return parseBoundedSeconds(
+    'session_table_item_ttl', value, DEFAULT_SESSION_TABLE_ITEM_TTL, MIN_SESSION_TABLE_ITEM_TTL, MAX_SESSION_TABLE_ITEM_TTL);
 }
 
 /**

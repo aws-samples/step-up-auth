@@ -13,7 +13,7 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     echo "  COGNITO_UP_ARN"
     echo "  COGNITO_CLIENT_ID"
     echo "Optional environment variables"
-    echo "  SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900)"
+    echo "  SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900, range 60-900)"
     echo "  STEP_UP_MAX_REAUTH_AGE (max age of the accepted re-authentication in seconds, default 120, range 30-900)"
     echo "  STEP_UP_CHALLENGE_CLOCK_SKEW (allowance for 'authenticated after the challenge' in seconds, default 1, range 0-10)"
     echo "  STEP_UP_REAUTH_FUTURE_SKEW (allowance for a future-dated auth_time in seconds, default 5, range 0-10)"
@@ -22,16 +22,21 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     exit 1
 fi
 
-# optional: SESSION_TABLE_ITEM_TTL (seconds) sets the step-up session lifetime.  default 900, the same as the CDK deployment
+# Each range check runs a string-length guard (-gt 3) BEFORE any numeric comparison.  Every step-up
+# maximum here is at most 3 digits (900), so an oversized all-digit value is rejected on length and the
+# shell's integer arithmetic never overflows on a huge input.  The `||` chain short-circuits, so the
+# numeric tests are only reached for values of 3 digits or fewer (at most 999).
+
+# optional: SESSION_TABLE_ITEM_TTL (seconds) sets the step-up session lifetime.  default 900, range 60-900, the same as the CDK deployment
 if [ -z "${SESSION_TABLE_ITEM_TTL}" ]; then
   SESSION_TABLE_ITEM_TTL=900
 fi
 case "${SESSION_TABLE_ITEM_TTL}" in
-  *[!0-9]*) ttl_is_number=no ;;
+  ''|*[!0-9]*) ttl_is_number=no ;;
   *) ttl_is_number=yes ;;
 esac
-if [ "${ttl_is_number}" != "yes" ] || [ "${SESSION_TABLE_ITEM_TTL}" -le 0 ]; then
-  echo "SESSION_TABLE_ITEM_TTL must be a positive integer (seconds), got '${SESSION_TABLE_ITEM_TTL}'"
+if [ "${ttl_is_number}" != "yes" ] || [ "${#SESSION_TABLE_ITEM_TTL}" -gt 3 ] || [ "${SESSION_TABLE_ITEM_TTL}" -lt 60 ] || [ "${SESSION_TABLE_ITEM_TTL}" -gt 900 ]; then
+  echo "SESSION_TABLE_ITEM_TTL must be a whole number of seconds between 60 and 900, got '${SESSION_TABLE_ITEM_TTL}'"
   exit 1
 fi
 
@@ -40,10 +45,10 @@ if [ -z "${STEP_UP_MAX_REAUTH_AGE}" ]; then
   STEP_UP_MAX_REAUTH_AGE=120
 fi
 case "${STEP_UP_MAX_REAUTH_AGE}" in
-  *[!0-9]*) max_age_is_number=no ;;
+  ''|*[!0-9]*) max_age_is_number=no ;;
   *) max_age_is_number=yes ;;
 esac
-if [ "${max_age_is_number}" != "yes" ] || [ "${STEP_UP_MAX_REAUTH_AGE}" -lt 30 ] || [ "${STEP_UP_MAX_REAUTH_AGE}" -gt 900 ]; then
+if [ "${max_age_is_number}" != "yes" ] || [ "${#STEP_UP_MAX_REAUTH_AGE}" -gt 3 ] || [ "${STEP_UP_MAX_REAUTH_AGE}" -lt 30 ] || [ "${STEP_UP_MAX_REAUTH_AGE}" -gt 900 ]; then
   echo "STEP_UP_MAX_REAUTH_AGE must be a whole number of seconds between 30 and 900, got '${STEP_UP_MAX_REAUTH_AGE}'"
   exit 1
 fi
@@ -53,10 +58,10 @@ if [ -z "${STEP_UP_CHALLENGE_CLOCK_SKEW}" ]; then
   STEP_UP_CHALLENGE_CLOCK_SKEW=1
 fi
 case "${STEP_UP_CHALLENGE_CLOCK_SKEW}" in
-  *[!0-9]*) challenge_skew_is_number=no ;;
+  ''|*[!0-9]*) challenge_skew_is_number=no ;;
   *) challenge_skew_is_number=yes ;;
 esac
-if [ "${challenge_skew_is_number}" != "yes" ] || [ "${STEP_UP_CHALLENGE_CLOCK_SKEW}" -lt 0 ] || [ "${STEP_UP_CHALLENGE_CLOCK_SKEW}" -gt 10 ]; then
+if [ "${challenge_skew_is_number}" != "yes" ] || [ "${#STEP_UP_CHALLENGE_CLOCK_SKEW}" -gt 3 ] || [ "${STEP_UP_CHALLENGE_CLOCK_SKEW}" -lt 0 ] || [ "${STEP_UP_CHALLENGE_CLOCK_SKEW}" -gt 10 ]; then
   echo "STEP_UP_CHALLENGE_CLOCK_SKEW must be a whole number of seconds between 0 and 10, got '${STEP_UP_CHALLENGE_CLOCK_SKEW}'"
   exit 1
 fi
@@ -66,10 +71,10 @@ if [ -z "${STEP_UP_REAUTH_FUTURE_SKEW}" ]; then
   STEP_UP_REAUTH_FUTURE_SKEW=5
 fi
 case "${STEP_UP_REAUTH_FUTURE_SKEW}" in
-  *[!0-9]*) future_skew_is_number=no ;;
+  ''|*[!0-9]*) future_skew_is_number=no ;;
   *) future_skew_is_number=yes ;;
 esac
-if [ "${future_skew_is_number}" != "yes" ] || [ "${STEP_UP_REAUTH_FUTURE_SKEW}" -lt 0 ] || [ "${STEP_UP_REAUTH_FUTURE_SKEW}" -gt 10 ]; then
+if [ "${future_skew_is_number}" != "yes" ] || [ "${#STEP_UP_REAUTH_FUTURE_SKEW}" -gt 3 ] || [ "${STEP_UP_REAUTH_FUTURE_SKEW}" -lt 0 ] || [ "${STEP_UP_REAUTH_FUTURE_SKEW}" -gt 10 ]; then
   echo "STEP_UP_REAUTH_FUTURE_SKEW must be a whole number of seconds between 0 and 10, got '${STEP_UP_REAUTH_FUTURE_SKEW}'"
   exit 1
 fi

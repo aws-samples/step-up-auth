@@ -2,13 +2,28 @@
 // SPDX-License-Identifier: MIT-0
 
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { readBoundedIntEnv } from '@step-up-auth/auth-utils';
+
+/**
+ * Step-up session lifetime bounds (seconds).  `SESSION_TABLE_ITEM_TTL` governs how long a step-up
+ * session row lives: the STEP_UP_COMPLETED elevation written on a successful re-authentication and the
+ * STEP_UP_REQUIRED marker the authorizer writes.  Because a completed row grants elevated access until
+ * its ttl, it is the longest-lived step-up window and must stay short.  It is therefore read through
+ * the shared fail-safe parser with a finite range instead of an unbounded numeric conversion: a
+ * missing, malformed, oversized or out-of-range value falls back to the secure 900s default and can
+ * NEVER widen the elevated-token replay window toward the access token's full remaining lifetime.  The
+ * 900s ceiling matches the challenge-ttl and re-auth-max-age ceilings so no step-up window exceeds it.
+ */
+const DEFAULT_SESSION_TABLE_ITEM_TTL_SECONDS = 900;
+const MIN_SESSION_TABLE_ITEM_TTL_SECONDS = 60;
+const MAX_SESSION_TABLE_ITEM_TTL_SECONDS = 900;
 
 class Client {
   protected client: DynamoDBClient;
   protected awsRegion: string = "us-east-1";
   protected environmentPrefix?: string;
   protected sessionIdExpirationTimeoutInSeconds: number = 900; // 15 minutes
-  protected sessionTableItemTTLInSeconds: number = 86400; // 24 hour
+  protected sessionTableItemTTLInSeconds: number = DEFAULT_SESSION_TABLE_ITEM_TTL_SECONDS;
   protected tokenTableItemTTLInSeconds: number = 86400; // 24 hours
 
   constructor() {
@@ -24,9 +39,14 @@ class Client {
       this.sessionIdExpirationTimeoutInSeconds = +process.env.SESSION_ID_EXP_TIMEOUT;
     }
 
-    if (process.env.SESSION_TABLE_ITEM_TTL !== undefined && typeof process.env.SESSION_TABLE_ITEM_TTL === 'string' && process.env.SESSION_TABLE_ITEM_TTL.length > 0) {
-      this.sessionTableItemTTLInSeconds = +process.env.SESSION_TABLE_ITEM_TTL;
-    }
+    // SESSION_TABLE_ITEM_TTL is bounded and fail-safe (see the constants above): a bad or oversized
+    // value falls back to the secure 900s default rather than widening the step-up session lifetime.
+    this.sessionTableItemTTLInSeconds = readBoundedIntEnv(
+      'SESSION_TABLE_ITEM_TTL',
+      DEFAULT_SESSION_TABLE_ITEM_TTL_SECONDS,
+      MIN_SESSION_TABLE_ITEM_TTL_SECONDS,
+      MAX_SESSION_TABLE_ITEM_TTL_SECONDS,
+    );
 
     if (process.env.TOKEN_TABLE_ITEM_TTL !== undefined && typeof process.env.TOKEN_TABLE_ITEM_TTL === 'string' && process.env.TOKEN_TABLE_ITEM_TTL.length > 0) {
       this.tokenTableItemTTLInSeconds = +process.env.TOKEN_TABLE_ITEM_TTL;

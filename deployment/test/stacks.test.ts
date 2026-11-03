@@ -149,13 +149,21 @@ describe('authorizer and challenge environment', () => {
     expect(env.COGNITO_ISSUER).toBe('https://cognito-idp.us-east-1.amazonaws.com');
   });
 
-  it('rejects a session_table_item_ttl that is not a positive integer', () => {
-    expect(() => synth({ session_table_item_ttl: 'abc' })).toThrow(/positive integer/);
-    for (const bad of ['abc', '', '0', '-5', '1.5', '60s', 0, -1]) {
-      expect(() => parseSessionTableItemTtl(bad)).toThrow(/positive integer/);
+  it('does not place SESSION_TABLE_ITEM_TTL on the initiate lambda (it mints challenges with an explicit ttl)', () => {
+    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda');
+    expect(env.SESSION_TABLE_ITEM_TTL).toBeUndefined();
+  });
+
+  it('rejects a session_table_item_ttl outside the 60-900 range, not a whole number, or oversized', () => {
+    for (const bad of ['abc', '', '0', '-5', '1.5', '60s', '59', '901', 0, -1, 1000]) {
+      expect(() => parseSessionTableItemTtl(bad)).toThrow(/between 60 and 900/);
     }
+    expect(() => synth({ session_table_item_ttl: '59' })).toThrow(/between 60 and 900/);
+    // an oversized all-digit value is rejected (it would otherwise convert to Infinity), not accepted
+    expect(() => parseSessionTableItemTtl('9'.repeat(400))).toThrow(/between 60 and 900/);
     expect(parseSessionTableItemTtl(undefined)).toBe(900);
     expect(parseSessionTableItemTtl('60')).toBe(60);
+    expect(parseSessionTableItemTtl('900')).toBe(900);
     expect(parseSessionTableItemTtl(120)).toBe(120);
   });
 });

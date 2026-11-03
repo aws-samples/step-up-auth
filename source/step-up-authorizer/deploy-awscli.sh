@@ -13,22 +13,24 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     echo "  COGNITO_UP_ARN"
     echo "  COGNITO_CLIENT_ID"
     echo "Optional environment variables"
-    echo "  SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900)"
+    echo "  SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900, range 60-900)"
     echo "  DEPLOYMENT_ENV (NODE_ENV of the function, default production)"
     echo "For an existing function, the script replaces the function's environment variables with these values and then updates the code."
     exit 1
 fi
 
-# optional: SESSION_TABLE_ITEM_TTL (seconds) sets the step-up session lifetime.  default 900, the same as the CDK deployment
+# optional: SESSION_TABLE_ITEM_TTL (seconds) sets the step-up session lifetime.  default 900, range 60-900, the same as the CDK deployment.
+# the string-length guard (-gt 3) runs before the numeric comparison so an oversized all-digit value is
+# rejected on length and the shell's integer arithmetic never overflows (900, the max, is 3 digits)
 if [ -z "${SESSION_TABLE_ITEM_TTL}" ]; then
   SESSION_TABLE_ITEM_TTL=900
 fi
 case "${SESSION_TABLE_ITEM_TTL}" in
-  *[!0-9]*) ttl_is_number=no ;;
+  ''|*[!0-9]*) ttl_is_number=no ;;
   *) ttl_is_number=yes ;;
 esac
-if [ "${ttl_is_number}" != "yes" ] || [ "${SESSION_TABLE_ITEM_TTL}" -le 0 ]; then
-  echo "SESSION_TABLE_ITEM_TTL must be a positive integer (seconds), got '${SESSION_TABLE_ITEM_TTL}'"
+if [ "${ttl_is_number}" != "yes" ] || [ "${#SESSION_TABLE_ITEM_TTL}" -gt 3 ] || [ "${SESSION_TABLE_ITEM_TTL}" -lt 60 ] || [ "${SESSION_TABLE_ITEM_TTL}" -gt 900 ]; then
+  echo "SESSION_TABLE_ITEM_TTL must be a whole number of seconds between 60 and 900, got '${SESSION_TABLE_ITEM_TTL}'"
   exit 1
 fi
 
