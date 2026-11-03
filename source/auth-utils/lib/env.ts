@@ -14,9 +14,11 @@ const log = new Logger(fileName);
  * (a window, skew, lifetime or max age) so they all behave the same.
  *
  * It fails safe: when the variable is unset/empty, is not a whole number, or falls outside the allowed
- * range, the secure `defaultValue` is returned and a warning that names the variable (never a token or
- * secret) is logged.  A malformed or out-of-range value therefore can NEVER widen a security window —
- * it only ever falls back to the vetted default.
+ * range, the secure `defaultValue` is returned.  EVERY fallback logs a warning that names the variable
+ * and the safe default/range, so missing or mis-wired configuration is observable; the warning NEVER
+ * echoes the supplied value, so a token, password or other secret accidentally placed in one of these
+ * variables can never reach the logs.  A malformed or out-of-range value therefore can NEVER widen a
+ * security window — it only ever falls back to the vetted default.
  *
  * @param {string} name environment variable name (e.g. `STEP_UP_CHALLENGE_CLOCK_SKEW`)
  * @param {number} defaultValue secure default to use when the variable is missing or invalid
@@ -27,16 +29,17 @@ const log = new Logger(fileName);
 export function readBoundedIntEnv(name: string, defaultValue: number, min: number, max: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim().length === 0) {
+    log.warn(`${name} is not set; using the secure default ${defaultValue} (allowed range ${min}-${max})`);
     return defaultValue;
   }
   const text = raw.trim();
   if (!/^-?\d+$/.test(text)) {
-    log.warn(`${name} is not a whole number ('${text}'); falling back to the secure default ${defaultValue}`);
+    log.warn(`${name} is not a whole number; using the secure default ${defaultValue} (allowed range ${min}-${max})`);
     return defaultValue;
   }
   const value = Number(text);
   if (!Number.isSafeInteger(value) || value < min || value > max) {
-    log.warn(`${name} (${text}) is outside the allowed range ${min}-${max}; falling back to the secure default ${defaultValue}`);
+    log.warn(`${name} is outside the allowed range ${min}-${max}; using the secure default ${defaultValue}`);
     return defaultValue;
   }
   return value;
