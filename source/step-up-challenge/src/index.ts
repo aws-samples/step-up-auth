@@ -51,11 +51,11 @@ const bearerToken = (headerValue: string | undefined): string | undefined => {
 /**
  * Step-up Auth Challenge API Proxy Lambda handler.
  *
- * Step-up is completed by a *fresh re-authentication*, not by verifying or enrolling an MFA factor.
- * The client re-authenticates with Cognito (password plus the user's existing MFA) and calls this
- * endpoint presenting the freshly issued tokens: the access token in the `Authorization` header and
- * the id token in the `Identification` header.  The request body is not used.  See
- * `ReauthStepUpResponder` for the checks that must pass.
+ * Step-up is completed by a *fresh re-authentication* that was prompted by this step-up request, not by
+ * verifying or enrolling an MFA factor.  The client re-authenticates with Cognito (password plus the
+ * user's existing MFA) and calls this endpoint presenting the freshly issued tokens (access token in the
+ * `Authorization` header, id token in the `Identification` header) and the one-time `challengeId` from
+ * `/initiate-auth` in the JSON request body.  See `ReauthStepUpResponder` for the checks that must pass.
  * @param event Lambda event object
  * @param context Lambda request context object
  */
@@ -83,11 +83,23 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
       return result;
     }
 
+    // the one-time challenge id from /initiate-auth is sent in the JSON body; a missing/invalid body
+    // simply yields no challenge id, which the responder rejects (fail closed)
+    let challengeId: string | undefined;
+    try {
+      const parsed = event.body ? JSON.parse(event.body) : {};
+      if (parsed && typeof parsed.challengeId === 'string') {
+        challengeId = parsed.challengeId;
+      }
+    } catch ( e ) {
+      log.warn('unable to parse request body for challengeId');
+    }
+
     const client = new CognitoIdentityProviderClient({
       region: process.env.AWS_REGION ? process.env.AWS_REGION : 'us-east-1',
     });
 
-    const responder = new ReauthStepUpResponder(accessToken, idToken, client);
+    const responder = new ReauthStepUpResponder(accessToken, idToken, client, challengeId);
     const outcome = await responder.validate();
 
     if (outcome.ok) {

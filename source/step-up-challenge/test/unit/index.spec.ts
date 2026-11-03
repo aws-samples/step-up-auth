@@ -5,7 +5,7 @@ import { describe, expect, it, beforeAll, beforeEach, afterEach, jest } from '@j
 import { Context, APIGatewayProxyEvent } from 'aws-lambda';
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoToken } from '@step-up-auth/auth-utils';
-import { SessionClient } from '@step-up-auth/auth-sdk';
+import { SessionClient, StepUpStatusEnum, Session } from '@step-up-auth/auth-sdk';
 
 import { handler } from '../../src/index';
 import { signJwt, testJwk } from '../helpers/jwt';
@@ -13,6 +13,17 @@ import { signJwt, testJwk } from '../helpers/jwt';
 const USER_POOL_ID = 'us-east-1_TESTPOOL1';
 const CLIENT_ID = 'testclient';
 const ISS = `https://cognito-idp.us-east-1.amazonaws.com/${USER_POOL_ID}`;
+const CHALLENGE_ID = 'c1';
+
+// A one-time challenge row as /initiate-auth would have written it: minted for sub-1, created 10s ago.
+const challengeRow = (overrides: Partial<Session> = {}): Session => {
+  const now = Math.floor(Date.now() / 1000);
+  const s = new Session(`challenge#${CHALLENGE_ID}`, 'sub-1', '', '', '', StepUpStatusEnum.STEP_UP_REQUIRED);
+  s.createTimestamp = new Date((now - 10) * 1000).toISOString();
+  s.lastUpdateTimestamp = s.createTimestamp;
+  s.ttl = now + 600;
+  return Object.assign(s, overrides);
+};
 
 const HEADERS = {
   'Access-Control-Allow-Headers':
@@ -67,6 +78,8 @@ describe('handler', () => {
     sendMock = ((jest.spyOn(CognitoIdentityProviderClient.prototype, 'send') as unknown) as SendMock).mockClear();
     sendMock.mockResolvedValue({ PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA', UserMFASettingList: ['SOFTWARE_TOKEN_MFA'] });
     jest.spyOn(SessionClient.prototype, 'createSessionWithParams').mockResolvedValue('fresh-jti-1');
+    jest.spyOn(SessionClient.prototype, 'getSession').mockResolvedValue(challengeRow());
+    jest.spyOn(SessionClient.prototype, 'deleteSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
   });
 
   afterEach(() => {
@@ -93,16 +106,30 @@ describe('handler', () => {
     });
   }
 
-  it('completes step-up for a fresh, MFA-backed re-authentication', async () => {
+  it('completes step-up for a fresh, challenge-bound, MFA-backed re-authentication', async () => {
     const response = await handler(
       {
         ...BASE_EVENT, path: '/respond-to-challenge', httpMethod: 'POST',
         headers: { authorization: `Bearer ${freshAccess()}`, identification: `Bearer ${freshId()}` },
+        body: JSON.stringify({ challengeId: CHALLENGE_ID }),
       },
       BASE_CONTEXT
     );
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toEqual({ name: 'Status', details: 'Step-up complete' });
+  });
+
+  it('rejects when no challengeId is supplied in the body with reason NO_CHALLENGE', async () => {
+    const response = await handler(
+      {
+        ...BASE_EVENT, path: '/respond-to-challenge', httpMethod: 'POST',
+        headers: { authorization: `Bearer ${freshAccess()}`, identification: `Bearer ${freshId()}` },
+        body: '',
+      },
+      BASE_CONTEXT
+    );
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body)).toMatchObject({ details: 'Step-up failed', reason: 'NO_CHALLENGE' });
   });
 
   it('rejects a stale re-authentication with reason STALE_AUTH', async () => {
@@ -111,6 +138,7 @@ describe('handler', () => {
       {
         ...BASE_EVENT, path: '/respond-to-challenge', httpMethod: 'POST',
         headers: { authorization: `Bearer ${freshAccess({ auth_time: stale })}`, identification: `Bearer ${freshId()}` },
+        body: JSON.stringify({ challengeId: CHALLENGE_ID }),
       },
       BASE_CONTEXT
     );
