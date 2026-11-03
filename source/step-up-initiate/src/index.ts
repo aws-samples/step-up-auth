@@ -7,7 +7,7 @@ import {
   APIGatewayProxyEventHeaders,
   APIGatewayProxyResult,
 } from 'aws-lambda';
-import { Logger, CognitoToken } from '@step-up-auth/auth-utils';
+import { Logger, CognitoToken, readBoundedIntEnv } from '@step-up-auth/auth-utils';
 import { SessionClient, StepUpStatusEnum } from '@step-up-auth/auth-sdk';
 import * as crypto from 'crypto';
 
@@ -33,12 +33,18 @@ const unauthenticated = (): APIGatewayProxyResult => ({
 });
 
 /**
- * Lifetime, in seconds, of a one-time step-up re-authentication challenge.  It only needs to survive
- * long enough for the user to re-authenticate before `/respond-to-challenge` consumes it, so it is kept
- * short.  The challenge's creation time (not this ttl) is the load-bearing control: completion requires
- * a fresh `auth_time` strictly after the challenge was created.
+ * Default lifetime, in seconds, of a one-time step-up re-authentication challenge (10 minutes).  It
+ * only needs to survive long enough for the user to re-authenticate before `/respond-to-challenge`
+ * consumes it, so it is kept short.  The challenge's creation time (not this ttl) is the load-bearing
+ * control: completion requires a fresh `auth_time` strictly after the challenge was created.
+ * Overridable with the `STEP_UP_CHALLENGE_TTL` env var (whole seconds, 60 to 900 inclusive); a missing
+ * or out-of-range value falls back to this default.
  */
-const CHALLENGE_EXPIRY_SECONDS = 600;
+const DEFAULT_CHALLENGE_TTL_SECONDS = 600;
+/** Smallest accepted `STEP_UP_CHALLENGE_TTL` (seconds). */
+const MIN_CHALLENGE_TTL_SECONDS = 60;
+/** Largest accepted `STEP_UP_CHALLENGE_TTL` (seconds). */
+const MAX_CHALLENGE_TTL_SECONDS = 900;
 
 /**
  * Return the value of a request header, matching the header name case-insensitively.
@@ -121,19 +127,20 @@ export const handler = async (
     }
     const sub = idSub;
 
-    // mint a one-time challenge bound to this user, with a server-set creation time and short expiry
+    // mint a one-time challenge bound to this user, with a server-set creation time and short expiry.
+    // the ttl is written explicitly (createChallengeSession bypasses the SESSION_TABLE_ITEM_TTL cap),
+    // so the challenge lifetime is governed solely by STEP_UP_CHALLENGE_TTL
+    const challengeTtlSeconds = readBoundedIntEnv(
+      'STEP_UP_CHALLENGE_TTL', DEFAULT_CHALLENGE_TTL_SECONDS, MIN_CHALLENGE_TTL_SECONDS, MAX_CHALLENGE_TTL_SECONDS);
     const challengeId = crypto.randomBytes(16).toString('hex');
     const nowInSeconds = Math.floor(Date.now() / 1000);
     try {
       const sessionClient = new SessionClient();
-      await sessionClient.createSessionWithParams(
+      await sessionClient.createChallengeSession(
         `challenge#${challengeId}`,
         sub,
-        undefined,
-        undefined,
-        '',
         StepUpStatusEnum.STEP_UP_REQUIRED,
-        nowInSeconds + CHALLENGE_EXPIRY_SECONDS,
+        nowInSeconds + challengeTtlSeconds,
       );
     } catch ( e: any ) {
       log.error(`unable to create step-up challenge - ${e?.name}: ${e?.message}`);

@@ -64,8 +64,9 @@ describe('handler', () => {
   });
 
   beforeEach(() => {
+    // the handler mints the challenge via createChallengeSession, which writes an explicit, uncapped ttl
     createSpy = jest
-      .spyOn(SessionClient.prototype, 'createSessionWithParams')
+      .spyOn(SessionClient.prototype, 'createChallengeSession')
       .mockResolvedValue('challenge#created');
   });
 
@@ -131,10 +132,41 @@ describe('handler', () => {
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(createSpy.mock.calls[0][0]).toBe(`challenge#${body.challengeId}`);
     expect(createSpy.mock.calls[0][1]).toBe('sub-1');
-    expect(createSpy.mock.calls[0][5]).toBe(StepUpStatusEnum.STEP_UP_REQUIRED);
+    expect(createSpy.mock.calls[0][2]).toBe(StepUpStatusEnum.STEP_UP_REQUIRED);
     // a short, future expiry is passed so the challenge does not linger
     const nowInSeconds = Math.floor(Date.now() / 1000);
-    expect(createSpy.mock.calls[0][6]).toBeGreaterThan(nowInSeconds);
+    expect(createSpy.mock.calls[0][3]).toBeGreaterThan(nowInSeconds);
+  });
+
+  it('writes the challenge with the default STEP_UP_CHALLENGE_TTL (600s) and never via the ttl-capped path', async () => {
+    const capSpy = jest.spyOn(SessionClient.prototype, 'createSessionWithParams');
+    const now = Math.floor(Date.now() / 1000);
+    const response = await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
+
+    expect(response.statusCode).toBe(200);
+    // ttl is creation + 600 by default, written through the explicit-ttl method (not the capped one)
+    expect(createSpy.mock.calls[0][3]).toBeGreaterThanOrEqual(now + 600);
+    expect(createSpy.mock.calls[0][3]).toBeLessThanOrEqual(now + 602);
+    expect(capSpy).not.toHaveBeenCalled();
+  });
+
+  it('honours a valid STEP_UP_CHALLENGE_TTL', async () => {
+    process.env.STEP_UP_CHALLENGE_TTL = '300';
+    const now = Math.floor(Date.now() / 1000);
+    await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
+    expect(createSpy.mock.calls[0][3]).toBeGreaterThanOrEqual(now + 300);
+    expect(createSpy.mock.calls[0][3]).toBeLessThanOrEqual(now + 302);
+  });
+
+  it('falls back to 600 for an invalid or out-of-range STEP_UP_CHALLENGE_TTL', async () => {
+    for (const bad of ['abc', '30', '1000', '-5', '600s']) {
+      createSpy.mockClear();
+      process.env.STEP_UP_CHALLENGE_TTL = bad;
+      const now = Math.floor(Date.now() / 1000);
+      await handler(initiateEvent({ Authorization: `Bearer ${accessToken()}` }), BASE_CONTEXT);
+      expect(createSpy.mock.calls[0][3]).toBeGreaterThanOrEqual(now + 600);
+      expect(createSpy.mock.calls[0][3]).toBeLessThanOrEqual(now + 602);
+    }
   });
 
   it('accepts a lowercase bearer authorization header (Amplify v6)', async () => {
