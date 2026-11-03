@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-import { fetchAuthSession } from "aws-amplify/auth";
+import { fetchAuthSession, signIn, signOut, confirmSignIn } from "aws-amplify/auth";
 import { post } from "aws-amplify/api";
 
 import {
@@ -36,26 +36,22 @@ export function clearstepUp() {
   };
 }
 
-// Step-up - initiate
+// Step-up - initiate.  The backend now answers with REAUTH_REQUIRED: step-up is satisfied by a fresh
+// re-authentication (password + the user's existing MFA), not by verifying or enrolling an MFA factor.
 export function stepUpInitiate(mock) {
   return (dispatch) => {
     console.log("StepUpActions.stepUpInitiate(): mock:", mock || false);
     return new Promise((resolve, reject) => {
 
       if (mock) {
-        dispatch({
-          type: STEP_UP_INITIATED,
-          payload: {
-            code: "SMS_STEP_UP"
-          }
-        });
+        dispatch({ type: STEP_UP_INITIATED, payload: { code: "REAUTH_REQUIRED" } });
+        resolve(true);
         return;
       }
 
       getSessionTokens()
         .then((tokens) => {
           const { accessToken, idToken } = tokens;
-          // API call
           post({
             apiName: config.REST_API_ENDPOINTS[0].name,
             path: "/initiate-auth",
@@ -67,131 +63,105 @@ export function stepUpInitiate(mock) {
             }
           }).response
           .then(({ statusCode, body }) => body.json().then((data) => ({ statusCode, data })))
-          // handle API success
           .then((response) => {
             console.log("StepUpActions.stepUpInitiate(): response:", response);
-            if (response && response.data &&
-                (
-                  response.data.code === "SOFTWARE_TOKEN_STEP_UP" ||
-                  response.data.code === "SMS_STEP_UP" ||
-                  response.data.code === "MAYBE_SOFTWARE_TOKEN_STEP_UP"
-                )
-              ) {
-              dispatch({
-                type: STEP_UP_INITIATED,
-                payload: {
-                  code: response.data.code
-                }
-              });
-              resolve(true); // resolve with dummy value
+            if (response && response.data && response.data.code === "REAUTH_REQUIRED") {
+              dispatch({ type: STEP_UP_INITIATED, payload: { code: response.data.code } });
+              resolve(true);
             } else {
               dispatch({
                 type: STEP_UP_ERROR,
-                payload: {
-                  message: "Invalid step-up initiate response",
-                  origin: STEP_UP_INITIATED
-                }
+                payload: { message: "Invalid step-up initiate response", origin: STEP_UP_INITIATED }
               });
-              resolve(true); // resolve with dummy value
+              resolve(true);
             }
           })
-          // catch post() error
           .catch((err) => {
             console.log("StepUpActions.stepUpInitiate(): error response:", err);
-            dispatch({
-              type: STEP_UP_ERROR,
-              payload: {
-                message: err.message,
-                origin: STEP_UP_INITIATED
-              }
-            });
-            reject(false); // reject with dummy value
+            dispatch({ type: STEP_UP_ERROR, payload: { message: err.message, origin: STEP_UP_INITIATED } });
+            reject(false);
           });
         })
-        // catch fetchAuthSession() error
         .catch((err) => {
           console.log("StepUpActions.stepUpInitiate(): error response:", err);
-          dispatch({
-            type: STEP_UP_ERROR,
-            payload: {
-              message: err.message,
-              origin: STEP_UP_INITIATED
-            }
-          });
-          reject(false); // reject with dummy value
+          dispatch({ type: STEP_UP_ERROR, payload: { message: err.message, origin: STEP_UP_INITIATED } });
+          reject(false);
         });
     });
   };
 }
 
-// Step-up - respond to challenge
-export function stepUpRespondToChallenge(mock, stepUpType, challengeResponse) {
+// Re-authenticate with Cognito (SRP password + the user's existing MFA), then present the freshly
+// issued tokens to /respond-to-challenge to complete step-up.  Amplify v6 does not let you sign in while
+// a session exists, so we sign out locally first; the new session's tokens then carry a fresh auth_time.
+function reauthenticate(username, password, mfaCode) {
+  return signOut()
+    .then(() => signIn({ username, password }))
+    .then((output) => {
+      const step = output && output.nextStep && output.nextStep.signInStep;
+      console.log("StepUpActions.reauthenticate(): signInStep:", step);
+      if (step === "DONE") {
+        return output;
+      }
+      if (step === "CONFIRM_SIGN_IN_WITH_TOTP_CODE" || step === "CONFIRM_SIGN_IN_WITH_SMS_CODE") {
+        return confirmSignIn({ challengeResponse: mfaCode });
+      }
+      if (step === "CONTINUE_SIGN_IN_WITH_MFA_SELECTION") {
+        const allowed = (output.nextStep && output.nextStep.allowedMFATypes) || [];
+        const choice = allowed.includes("TOTP") ? "TOTP" : "SMS";
+        return confirmSignIn({ challengeResponse: choice })
+          .then(() => confirmSignIn({ challengeResponse: mfaCode }));
+      }
+      throw new Error(`Unsupported re-authentication step: ${step}`);
+    });
+}
+
+// Step-up - respond to challenge by re-authenticating and presenting the fresh tokens
+export function stepUpRespondToChallenge(mock, password, mfaCode) {
   return function (dispatch) {
-    console.log("StepUpActions.stepUpRespondToChallenge()");
+    console.log("StepUpActions.stepUpRespondToChallenge(): re-authenticating");
 
     if (mock) {
-      dispatch({
-        type: STEP_UP_COMPLETED,
-        payload: {
-          details: STEP_UP_COMPLETED
-        }
-      });
+      dispatch({ type: STEP_UP_COMPLETED, payload: { details: STEP_UP_COMPLETED } });
       return;
     }
 
-    getSessionTokens()
+    // read the current username before signing out, so we can re-authenticate as the same user
+    fetchAuthSession()
+      .then((session) => {
+        const tokens = session && session.tokens;
+        const username = (tokens && tokens.accessToken && tokens.accessToken.payload && tokens.accessToken.payload.username)
+          || (tokens && tokens.idToken && tokens.idToken.payload && tokens.idToken.payload["cognito:username"]);
+        if (!username) {
+          throw new Error("No current user");
+        }
+        return reauthenticate(username, password, mfaCode);
+      })
+      .then(() => getSessionTokens())
       .then((tokens) => {
         const { accessToken, idToken } = tokens;
-        // API call
-        post({
+        return post({
           apiName: config.REST_API_ENDPOINTS[0].name,
           path: "/respond-to-challenge",
           options: {
             headers: {
               Identification: `Bearer ${idToken}`,
               Authorization: `Bearer ${accessToken}`,
-            },
-            body: {
-              'step-up-type': stepUpType,
-              'challenge-response': challengeResponse
             }
           }
-        }).response
-        .then(({ body }) => body.json())
-        // handle API success
-        .then((response) => {
-          console.log("StepUpActions.stepUpRespondToChallenge(): response:", response);
-          const successMessage = `${response && response.details}`;
-          dispatch({
-            type: STEP_UP_COMPLETED,
-            payload: {
-              details: successMessage,
-              code: stepUpType
-            },
-          });
-        })
-        // catch post() error
-        .catch((err) => {
-          console.log("StepUpActions.stepUpRespondToChallenge(): error response:", err);
-          dispatch({
-            type: STEP_UP_ERROR,
-            payload: {
-              message: err.message,
-              origin: STEP_UP_COMPLETED
-            }
-          });
+        }).response;
+      })
+      .then(({ body }) => body.json())
+      .then((response) => {
+        console.log("StepUpActions.stepUpRespondToChallenge(): response:", response);
+        dispatch({
+          type: STEP_UP_COMPLETED,
+          payload: { details: `${response && response.details}`, code: "REAUTH_REQUIRED" },
         });
       })
-      // catch fetchAuthSession() error
       .catch((err) => {
-        dispatch({
-          type: STEP_UP_ERROR,
-          payload: {
-            message: err.message,
-            origin: STEP_UP_COMPLETED
-          }
-        });
+        console.log("StepUpActions.stepUpRespondToChallenge(): error response:", err);
+        dispatch({ type: STEP_UP_ERROR, payload: { message: err.message, origin: STEP_UP_COMPLETED } });
       });
-
   };
 }

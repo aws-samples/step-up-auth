@@ -19,7 +19,7 @@ import {
   STEP_UP_INITIATED
 } from '../../actions/Types';
 
-import ChallengeHandler from './ChallengeHandler';
+import ReauthHandler from './ReauthHandler';
 
 class StepUp extends Component {
   constructor(props) {
@@ -35,7 +35,7 @@ class StepUp extends Component {
     // this.parseAuthenticateHeader = this.parseAuthenticateHeader.bind(this);
     this.transfer = this.transfer.bind(this);
     this.info = this.info.bind(this);
-    this.handleStepUpChallenge = this.handleStepUpChallenge.bind(this);
+    this.handleReauth = this.handleReauth.bind(this);
     this.renderChallengeResponse = this.renderChallengeResponse.bind(this);
     this.renderThrottleError = this.renderThrottleError.bind(this);
   }
@@ -58,11 +58,9 @@ class StepUp extends Component {
     this.props.infoAction(false);
   }
 
-  async handleStepUpChallenge(challengeResponse) {
-    console.log('StepUp.handleStepUpChallenge(): received challengeResponse', challengeResponse);
-    const { steppedUp, stepUpType } = this.props;
-    console.log(`StepUp.handleStepUpChallenge(): steppedUp: ${steppedUp}, stepUpType: ${stepUpType}`);
-    this.props.stepUpRespondToChallengeAction(false, stepUpType, challengeResponse);
+  async handleReauth(password, mfaCode) {
+    console.log('StepUp.handleReauth(): re-authenticating to complete step-up');
+    this.props.stepUpRespondToChallengeAction(false, password, mfaCode);
   }
 
   renderChallengeResponse() {
@@ -96,11 +94,7 @@ class StepUp extends Component {
     else {
       renderElements = (
         <Segment basic textAlign={"center"}>
-          <ChallengeHandler
-            handleChallenge={this.handleStepUpChallenge}
-            showMessage={stepUpType === "MAYBE_SOFTWARE_TOKEN_STEP_UP" ? true : false}
-            message="Please enter your one-time password code. If you don't have a software token configured, please add one from Settings -> Software Token"
-            />
+          <ReauthHandler handleReauth={this.handleReauth} />
           { stepUpError && stepUpError.length > 0 && (
             <Container>
               <Label as="span" color="orange">
