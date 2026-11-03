@@ -25,6 +25,13 @@ const BASE_HEADERS = {
 
 const BEARER_RE = /^Bearer [A-Za-z0-9-_=.]+$/;
 
+/** 401 used for every unauthenticated/identity-mismatch case; it never reveals which check failed. */
+const unauthenticated = (): APIGatewayProxyResult => ({
+  statusCode: 401,
+  headers: BASE_HEADERS,
+  body: JSON.stringify({ code: 'UNAUTHENTICATED' }),
+});
+
 /**
  * Lifetime, in seconds, of a one-time step-up re-authentication challenge.  It only needs to survive
  * long enough for the user to re-authenticate before `/respond-to-challenge` consumes it, so it is kept
@@ -74,33 +81,45 @@ export const handler = async (
   }
 
   if (event.path === '/initiate-auth' && event.httpMethod === 'POST') {
-    // the endpoint is additionally protected by the API Gateway Cognito authorizer (id token); here we
-    // read the caller's access token so we can bind the one-time challenge to that user's `sub`
+    // This endpoint sits behind the API Gateway Cognito authorizer, which has already cryptographically
+    // verified the caller's id token and placed its claims on the request context.  The challenge
+    // subject is taken from that gateway-verified id token (`requestContext.authorizer.claims.sub`),
+    // NOT from the Authorization value, which the gateway never checked.  We additionally verify the
+    // caller's access token and require its subject to equal the authorized id-token subject.  So a
+    // caller can only mint a challenge for the exact user the gateway authenticated: a forged or
+    // victim-substituted Authorization value is rejected here rather than merely decoded.
     const authorizationHeader = getHeader(event.headers, 'Authorization');
     if (!authorizationHeader || !BEARER_RE.test(authorizationHeader)) {
-      return {
-        statusCode: 401,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({ code: 'UNAUTHENTICATED' }),
-      };
+      return unauthenticated();
     }
 
-    // decode (not verify) the subject from the access token; the gateway Cognito authorizer has already
-    // vetted the request, and `/respond-to-challenge` re-checks this `sub` against the *verified* fresh
-    // token before accepting step-up
-    let sub = '';
+    // authoritative subject: the gateway-verified id token's `sub` from the request context
+    const authorizer = event.requestContext && event.requestContext.authorizer
+      ? (event.requestContext.authorizer as { claims?: Record<string, unknown> })
+      : undefined;
+    const idSub = authorizer && authorizer.claims && typeof authorizer.claims.sub === 'string'
+      ? authorizer.claims.sub
+      : '';
+    if (!idSub) {
+      log.warn('initiate rejected: request context carries no gateway-authorized subject');
+      return unauthenticated();
+    }
+
+    // cryptographically verify the caller's access token and require it to be for the SAME subject
+    let accessSub = '';
     try {
-      sub = new CognitoToken(authorizationHeader).getSubClaim();
+      const access = new CognitoToken(authorizationHeader);
+      if (access.isAccessToken() && (await access.verify('access'))) {
+        accessSub = access.getSubClaim();
+      }
     } catch ( e ) {
-      sub = '';
+      accessSub = '';
     }
-    if (!sub) {
-      return {
-        statusCode: 401,
-        headers: BASE_HEADERS,
-        body: JSON.stringify({ code: 'UNAUTHENTICATED' }),
-      };
+    if (!accessSub || accessSub !== idSub) {
+      log.warn('initiate rejected: access token invalid, or its subject does not match the authorized id token');
+      return unauthenticated();
     }
+    const sub = idSub;
 
     // mint a one-time challenge bound to this user, with a server-set creation time and short expiry
     const challengeId = crypto.randomBytes(16).toString('hex');

@@ -54,6 +54,11 @@ export class LambdaStack extends cdk.Stack {
       memorySize: 512,
       role: props.lambdaExecutionRole,
       environment: {
+        // the initiate function verifies the caller's access token (aws-jwt-verify) and binds the
+        // one-time challenge to the gateway-authorized subject, so it needs the pool/client identifiers
+        COGNITO_ISSUER: props.cognitoIssuer,
+        COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
+        COGNITO_CLIENT_ID: props.cognitoUserPoolClient.userPoolClientId,
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''
       }

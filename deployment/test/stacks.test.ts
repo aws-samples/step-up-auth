@@ -133,6 +133,14 @@ describe('authorizer and challenge environment', () => {
     }
   });
 
+  it('gives the initiate lambda the cognito identifiers it needs to verify the access token', () => {
+    const env = functionEnv(synth()['StepUpAuthApi/Lambda'], 'stepupauthinitiatelambda');
+    expect(env.COGNITO_CLIENT_ID).toBeDefined();
+    expect(JSON.stringify(env.COGNITO_CLIENT_ID)).toContain('StepUpAuthWebClient');
+    expect(env.COGNITO_USER_POOL_ARN).toBeDefined();
+    expect(env.COGNITO_ISSUER).toBe('https://cognito-idp.us-east-1.amazonaws.com');
+  });
+
   it('rejects a session_table_item_ttl that is not a positive integer', () => {
     expect(() => synth({ session_table_item_ttl: 'abc' })).toThrow(/positive integer/);
     for (const bad of ['abc', '', '0', '-5', '1.5', '60s', 0, -1]) {
