@@ -204,4 +204,90 @@ describe('ReauthStepUpResponder.validate()', () => {
 
     expect(result).toEqual({ ok: false, reason: 'BAD_ID_TOKEN' });
   });
+
+  // ----------------------------------------
+  //   STEP_UP_CHALLENGE_CLOCK_SKEW (the "authenticated after the challenge" allowance)
+  // ----------------------------------------
+  describe('challenge clock-skew allowance', () => {
+    // a challenge created exactly "now", so an off-by-one-second auth_time exercises the skew edge
+    const challengeAtNow = (now: number): Session =>
+      challengeRow({ createTimestamp: new Date(now * 1000).toISOString(), ttl: now + 600 });
+
+    it('with the default skew (1), rejects a token authenticated 2s before the challenge', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      getSessionSpy.mockResolvedValue(challengeAtNow(now));
+      const result = await new ReauthStepUpResponder(freshAccess({ auth_time: now - 2 }), freshId(), client, CHALLENGE_ID).validate();
+      expect(result).toEqual({ ok: false, reason: 'STALE_AUTH' });
+      expect(consumeSessionSpy).not.toHaveBeenCalled();
+    });
+
+    it('with the default skew (1), accepts a token authenticated in the same second as the challenge', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      getSessionSpy.mockResolvedValue(challengeAtNow(now));
+      const result = await new ReauthStepUpResponder(freshAccess({ auth_time: now }), freshId(), client, CHALLENGE_ID).validate();
+      expect(result.ok).toBe(true);
+    });
+
+    it('applies a configured STEP_UP_CHALLENGE_CLOCK_SKEW (3 accepts a token 2s before the challenge)', async () => {
+      process.env.STEP_UP_CHALLENGE_CLOCK_SKEW = '3';
+      const now = Math.floor(Date.now() / 1000);
+      getSessionSpy.mockResolvedValue(challengeAtNow(now));
+      const result = await new ReauthStepUpResponder(freshAccess({ auth_time: now - 2 }), freshId(), client, CHALLENGE_ID).validate();
+      expect(result.ok).toBe(true);
+    });
+
+    it('falls back to the default skew (1) for an invalid or out-of-range value', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      for (const bad of ['abc', '20', '-1']) {
+        process.env.STEP_UP_CHALLENGE_CLOCK_SKEW = bad;
+        getSessionSpy.mockResolvedValue(challengeAtNow(now));
+        const result = await new ReauthStepUpResponder(freshAccess({ auth_time: now - 2 }), freshId(), client, CHALLENGE_ID).validate();
+        expect(result).toEqual({ ok: false, reason: 'STALE_AUTH' });
+      }
+    });
+  });
+
+  // ----------------------------------------
+  //   STEP_UP_MAX_REAUTH_AGE (recency bound, range 30-900)
+  // ----------------------------------------
+  describe('re-authentication max age', () => {
+    // a challenge created well before "now", so the after-challenge check always passes and the
+    // recency bound is what decides the outcome
+    const oldChallenge = (now: number): Session =>
+      challengeRow({ createTimestamp: new Date((now - 100) * 1000).toISOString(), ttl: now + 600 });
+
+    it('applies a configured STEP_UP_MAX_REAUTH_AGE (30 rejects a 40s-old authentication)', async () => {
+      process.env.STEP_UP_MAX_REAUTH_AGE = '30';
+      const now = Math.floor(Date.now() / 1000);
+      getSessionSpy.mockResolvedValue(oldChallenge(now));
+      const result = await new ReauthStepUpResponder(freshAccess({ auth_time: now - 40 }), freshId(), client, CHALLENGE_ID).validate();
+      expect(result).toEqual({ ok: false, reason: 'STALE_AUTH' });
+    });
+
+    it('falls back to the default (120) for an out-of-range STEP_UP_MAX_REAUTH_AGE (5 below the floor)', async () => {
+      process.env.STEP_UP_MAX_REAUTH_AGE = '5';
+      const now = Math.floor(Date.now() / 1000);
+      getSessionSpy.mockResolvedValue(oldChallenge(now));
+      // a 40s-old authentication is accepted because the invalid 5 falls back to 120, not down to 5
+      const result = await new ReauthStepUpResponder(freshAccess({ auth_time: now - 40 }), freshId(), client, CHALLENGE_ID).validate();
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  // ----------------------------------------
+  //   STEP_UP_REAUTH_FUTURE_SKEW (future-dated auth_time guard)
+  // ----------------------------------------
+  describe('future-dated auth_time guard', () => {
+    it('tightens the future-dated auth_time guard when STEP_UP_REAUTH_FUTURE_SKEW is lowered to 0', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      getSessionSpy.mockResolvedValue(challengeRow({ createTimestamp: new Date((now - 10) * 1000).toISOString(), ttl: now + 600 }));
+      // the default guard (5) tolerates a token dated 2s ahead of this runtime's clock
+      const accepted = await new ReauthStepUpResponder(freshAccess({ auth_time: now + 2 }), freshId(), client, CHALLENGE_ID).validate();
+      expect(accepted.ok).toBe(true);
+      // with the guard set to 0, the same 2s-ahead token is rejected
+      process.env.STEP_UP_REAUTH_FUTURE_SKEW = '0';
+      const rejected = await new ReauthStepUpResponder(freshAccess({ auth_time: now + 2 }), freshId(), client, CHALLENGE_ID).validate();
+      expect(rejected).toEqual({ ok: false, reason: 'STALE_AUTH' });
+    });
+  });
 });

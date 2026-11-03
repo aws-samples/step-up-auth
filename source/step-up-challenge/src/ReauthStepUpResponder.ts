@@ -7,7 +7,8 @@ import {
   Session } from '@step-up-auth/auth-sdk';
 import {
   Logger,
-  CognitoToken } from '@step-up-auth/auth-utils';
+  CognitoToken,
+  readBoundedIntEnv } from '@step-up-auth/auth-utils';
 import {
   CognitoIdentityProviderClient,
   GetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
@@ -28,17 +29,40 @@ export interface StepUpResult {
 
 /**
  * Default maximum age, in seconds, of the re-authentication that step-up will accept.  A token whose
- * `auth_time` is older than this is rejected.  Overridable with the STEP_UP_MAX_REAUTH_AGE env var.
+ * `auth_time` is older than this is rejected.  Overridable with the STEP_UP_MAX_REAUTH_AGE env var
+ * (whole seconds, 30 to 900 inclusive); a missing or out-of-range value falls back to this default.
+ * The range floor (30 s) keeps the window large enough for a real user to finish a password + MFA
+ * re-auth, and the ceiling (900 s) stops it being widened into a long-lived replay window.
  */
 const DEFAULT_MAX_REAUTH_AGE_SECONDS = 120;
-/** Small allowance (seconds) for clock skew between Cognito and this runtime. */
-const CLOCK_SKEW_SECONDS = 5;
+/** Smallest accepted STEP_UP_MAX_REAUTH_AGE (seconds). */
+const MIN_MAX_REAUTH_AGE_SECONDS = 30;
+/** Largest accepted STEP_UP_MAX_REAUTH_AGE (seconds). */
+const MAX_MAX_REAUTH_AGE_SECONDS = 900;
+
 /**
- * Allowance (seconds) for clock skew when requiring that the authentication happened *after* the
- * challenge was created.  This is intentionally small: it must not be widened into the full
- * re-authentication max age, or a token authenticated well before the challenge would be accepted.
+ * Default allowance (seconds) for clock skew between Cognito and this runtime when guarding against an
+ * implausibly future-dated `auth_time`.  Overridable with the STEP_UP_REAUTH_FUTURE_SKEW env var
+ * (whole seconds, 0 to 10 inclusive); a missing or out-of-range value falls back to this default.
  */
-const CHALLENGE_CLOCK_SKEW_SECONDS = 5;
+const DEFAULT_REAUTH_FUTURE_SKEW_SECONDS = 5;
+
+/**
+ * Default allowance (seconds) for clock skew when requiring that the authentication happened *after*
+ * the challenge was created.  Overridable with the STEP_UP_CHALLENGE_CLOCK_SKEW env var (whole seconds,
+ * 0 to 10 inclusive); a missing or out-of-range value falls back to this default.
+ *
+ * This allowance is intentionally small and MUST NEVER be widened toward the re-authentication max age:
+ * doing so would accept a token authenticated well before the challenge, re-opening the stolen-token
+ * window this control closes.  The default is 1 (not 0) because both `auth_time` and the challenge
+ * creation time are whole seconds, so a legitimate re-auth in the same clock second as the challenge
+ * would otherwise be rejected by off-by-one rounding.
+ */
+const DEFAULT_CHALLENGE_CLOCK_SKEW_SECONDS = 1;
+/** Smallest accepted STEP_UP_CHALLENGE_CLOCK_SKEW and STEP_UP_REAUTH_FUTURE_SKEW (seconds). */
+const MIN_SKEW_SECONDS = 0;
+/** Largest accepted STEP_UP_CHALLENGE_CLOCK_SKEW and STEP_UP_REAUTH_FUTURE_SKEW (seconds). */
+const MAX_SKEW_SECONDS = 10;
 
 /**
  * Re-authentication step-up responder.
@@ -67,6 +91,8 @@ class ReauthStepUpResponder {
   private client: CognitoIdentityProviderClient;
   private challengeId?: string;
   private maxReauthAgeSeconds: number;
+  private reauthFutureSkewSeconds: number;
+  private challengeClockSkewSeconds: number;
 
   /**
    * C-TOR
@@ -80,8 +106,12 @@ class ReauthStepUpResponder {
     this.idTokenValue = idToken;
     this.client = client;
     this.challengeId = challengeId;
-    const configured = Number(process.env.STEP_UP_MAX_REAUTH_AGE);
-    this.maxReauthAgeSeconds = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_REAUTH_AGE_SECONDS;
+    this.maxReauthAgeSeconds = readBoundedIntEnv(
+      'STEP_UP_MAX_REAUTH_AGE', DEFAULT_MAX_REAUTH_AGE_SECONDS, MIN_MAX_REAUTH_AGE_SECONDS, MAX_MAX_REAUTH_AGE_SECONDS);
+    this.reauthFutureSkewSeconds = readBoundedIntEnv(
+      'STEP_UP_REAUTH_FUTURE_SKEW', DEFAULT_REAUTH_FUTURE_SKEW_SECONDS, MIN_SKEW_SECONDS, MAX_SKEW_SECONDS);
+    this.challengeClockSkewSeconds = readBoundedIntEnv(
+      'STEP_UP_CHALLENGE_CLOCK_SKEW', DEFAULT_CHALLENGE_CLOCK_SKEW_SECONDS, MIN_SKEW_SECONDS, MAX_SKEW_SECONDS);
   }
 
   /**
@@ -164,13 +194,13 @@ class ReauthStepUpResponder {
     //    was created (only a small clock-skew allowance).  A stolen token's auth_time predates the
     //    challenge; a refresh does not advance auth_time.  Both are rejected here.
     const authTime = access.getAuthTimeClaim();
-    if (!authTime || authTime <= challengeCreateEpoch - CHALLENGE_CLOCK_SKEW_SECONDS) {
+    if (!authTime || authTime <= challengeCreateEpoch - this.challengeClockSkewSeconds) {
       log.warn('step-up rejected: authentication did not occur after the step-up challenge');
       return { ok: false, reason: 'STALE_AUTH' };
     }
 
     // 5. recency bound: the authentication must also be recent, and not implausibly in the future
-    if (nowInSeconds - authTime > this.maxReauthAgeSeconds || authTime > nowInSeconds + CLOCK_SKEW_SECONDS) {
+    if (nowInSeconds - authTime > this.maxReauthAgeSeconds || authTime > nowInSeconds + this.reauthFutureSkewSeconds) {
       log.warn(`step-up rejected: authentication is not recent (auth_time age exceeds ${this.maxReauthAgeSeconds}s)`);
       return { ok: false, reason: 'STALE_AUTH' };
     }
