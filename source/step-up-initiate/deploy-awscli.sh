@@ -4,16 +4,34 @@
 # SPDX-License-Identifier: MIT-0
 
 ## initialize and do some pre-flight checks
-if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$ENV_PREFIX" ]; then
+# COGNITO_UP_ARN and COGNITO_CLIENT_ID are required: since the challenge-binding change, /initiate-auth
+# verifies the caller's access token with CognitoToken, so without them the function fails closed (401).
+if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$ENV_PREFIX" -o -z "$COGNITO_UP_ARN" -o -z "$COGNITO_CLIENT_ID" ]; then
     echo "Missing environment variables.  Ensure following environment variables are set"
     echo "  AWS_PROFILE"
     echo "  AWS_REGION"
     echo "  AWS_LAMBDA_ROLE_ARN"
     echo "  ENV_PREFIX"
+    echo "  COGNITO_UP_ARN"
+    echo "  COGNITO_CLIENT_ID"
     echo "Optional environment variables"
+    echo "  STEP_UP_CHALLENGE_TTL (one-time challenge lifetime in seconds, default 600, range 60-900)"
     echo "  DEPLOYMENT_ENV (NODE_ENV of the function, default production)"
-    echo "The function's environment variables are set only when the function is created.  For an existing function, only the code is updated."
+    echo "For an existing function, the script replaces the function's environment variables with these values and then updates the code."
     exit 1
+fi
+
+# optional: STEP_UP_CHALLENGE_TTL (seconds) sets the one-time challenge lifetime.  default 600, range 60-900, the same as the CDK deployment
+if [ -z "${STEP_UP_CHALLENGE_TTL}" ]; then
+  STEP_UP_CHALLENGE_TTL=600
+fi
+case "${STEP_UP_CHALLENGE_TTL}" in
+  *[!0-9]*) challenge_ttl_is_number=no ;;
+  *) challenge_ttl_is_number=yes ;;
+esac
+if [ "${challenge_ttl_is_number}" != "yes" ] || [ "${STEP_UP_CHALLENGE_TTL}" -lt 60 ] || [ "${STEP_UP_CHALLENGE_TTL}" -gt 900 ]; then
+  echo "STEP_UP_CHALLENGE_TTL must be a whole number of seconds between 60 and 900, got '${STEP_UP_CHALLENGE_TTL}'"
+  exit 1
 fi
 
 ## Change variables as necessary
@@ -36,6 +54,9 @@ echo "AWS_PROFILE: ${AWS_PROFILE}"
 echo "AWS_REGION: ${AWS_REGION}"
 echo "AWS_LAMBDA_ROLE_ARN: ${AWS_LAMBDA_ROLE_ARN}"
 echo "ENV_PREFIX: ${ENV_PREFIX}"
+echo "COGNITO_UP_ARN: ${COGNITO_UP_ARN}"
+echo "COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}"
+echo "STEP_UP_CHALLENGE_TTL: ${STEP_UP_CHALLENGE_TTL}"
 echo "WORKING_DIR: ${WORKING_DIR}"
 echo "NODE_ENV: ${NODE_ENV}"
 echo
@@ -75,8 +96,11 @@ echo "create/update lambda"
 # get module fully qualified path and file name
 module_zip_path=`ls ${module_zip}/${dist_name_zip}`
 
+# function environment, used when the function is created and when it is updated
+lambda_environment="Variables={NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN},COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID},STEP_UP_CHALLENGE_TTL=${STEP_UP_CHALLENGE_TTL}}"
+
 # check if lambda exits:
-# if yes, run "aws update-function-code"
+# if yes, run "aws update-function-configuration", wait for it to finish, then run "aws update-function-code"
 # if no, run "aws create-function"
 
 aws lambda get-function --function-name ${module_name} --profile ${AWS_PROFILE} --region ${AWS_REGION} > /tmp/$$.get.lambda 2>&1
@@ -89,20 +113,39 @@ if [ $? -ne 0 ]; then
         --tracing-config Mode=PassThrough \
         --timeout 30 \
         --memory-size 128 \
-        --environment Variables="{NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX}}" \
+        --environment "${lambda_environment}" \
         --role ${AWS_LAMBDA_ROLE_ARN} \
         --handler ${module_export} \
         --profile ${AWS_PROFILE} > /tmp/$$.lambda.create 2>&1
     lambda_rc=$?
     cat /tmp/$$.lambda.create
 else
-    aws lambda update-function-code \
+    # update the environment first, so the new code never runs with stale COGNITO_* or STEP_UP_CHALLENGE_TTL values
+    aws lambda update-function-configuration \
         --region ${AWS_REGION} \
         --function-name ${module_name} \
-        --zip-file fileb://"${module_zip_path}" \
-        --profile ${AWS_PROFILE} > /tmp/$$.lambda.update 2>&1
+        --environment "${lambda_environment}" \
+        --profile ${AWS_PROFILE} > /tmp/$$.lambda.config 2>&1
     lambda_rc=$?
-    cat /tmp/$$.lambda.update
+    cat /tmp/$$.lambda.config
+    if [ ${lambda_rc} -eq 0 ]; then
+        # lambda rejects a code update while the configuration update is in progress
+        aws lambda wait function-updated \
+            --region ${AWS_REGION} \
+            --function-name ${module_name} \
+            --profile ${AWS_PROFILE} > /tmp/$$.lambda.wait 2>&1
+        lambda_rc=$?
+        cat /tmp/$$.lambda.wait
+    fi
+    if [ ${lambda_rc} -eq 0 ]; then
+        aws lambda update-function-code \
+            --region ${AWS_REGION} \
+            --function-name ${module_name} \
+            --zip-file fileb://"${module_zip_path}" \
+            --profile ${AWS_PROFILE} > /tmp/$$.lambda.update 2>&1
+        lambda_rc=$?
+        cat /tmp/$$.lambda.update
+    fi
 fi
 
 # check for error (exit status of the aws command, not of cat)

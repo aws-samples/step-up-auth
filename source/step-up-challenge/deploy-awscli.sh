@@ -14,6 +14,9 @@ if [ -z "$AWS_PROFILE" -o -z "$AWS_REGION" -o -z "$AWS_LAMBDA_ROLE_ARN" -o -z "$
     echo "  COGNITO_CLIENT_ID"
     echo "Optional environment variables"
     echo "  SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900)"
+    echo "  STEP_UP_MAX_REAUTH_AGE (max age of the accepted re-authentication in seconds, default 120, range 30-900)"
+    echo "  STEP_UP_CHALLENGE_CLOCK_SKEW (allowance for 'authenticated after the challenge' in seconds, default 1, range 0-10)"
+    echo "  STEP_UP_REAUTH_FUTURE_SKEW (allowance for a future-dated auth_time in seconds, default 5, range 0-10)"
     echo "  DEPLOYMENT_ENV (NODE_ENV of the function, default production)"
     echo "For an existing function, the script replaces the function's environment variables with these values and then updates the code."
     exit 1
@@ -29,6 +32,45 @@ case "${SESSION_TABLE_ITEM_TTL}" in
 esac
 if [ "${ttl_is_number}" != "yes" ] || [ "${SESSION_TABLE_ITEM_TTL}" -le 0 ]; then
   echo "SESSION_TABLE_ITEM_TTL must be a positive integer (seconds), got '${SESSION_TABLE_ITEM_TTL}'"
+  exit 1
+fi
+
+# optional: STEP_UP_MAX_REAUTH_AGE (seconds) max age of the accepted re-authentication.  default 120, range 30-900, the same as the CDK deployment
+if [ -z "${STEP_UP_MAX_REAUTH_AGE}" ]; then
+  STEP_UP_MAX_REAUTH_AGE=120
+fi
+case "${STEP_UP_MAX_REAUTH_AGE}" in
+  *[!0-9]*) max_age_is_number=no ;;
+  *) max_age_is_number=yes ;;
+esac
+if [ "${max_age_is_number}" != "yes" ] || [ "${STEP_UP_MAX_REAUTH_AGE}" -lt 30 ] || [ "${STEP_UP_MAX_REAUTH_AGE}" -gt 900 ]; then
+  echo "STEP_UP_MAX_REAUTH_AGE must be a whole number of seconds between 30 and 900, got '${STEP_UP_MAX_REAUTH_AGE}'"
+  exit 1
+fi
+
+# optional: STEP_UP_CHALLENGE_CLOCK_SKEW (seconds) allowance for the 'authenticated after the challenge' check.  default 1, range 0-10, the same as the CDK deployment
+if [ -z "${STEP_UP_CHALLENGE_CLOCK_SKEW}" ]; then
+  STEP_UP_CHALLENGE_CLOCK_SKEW=1
+fi
+case "${STEP_UP_CHALLENGE_CLOCK_SKEW}" in
+  *[!0-9]*) challenge_skew_is_number=no ;;
+  *) challenge_skew_is_number=yes ;;
+esac
+if [ "${challenge_skew_is_number}" != "yes" ] || [ "${STEP_UP_CHALLENGE_CLOCK_SKEW}" -lt 0 ] || [ "${STEP_UP_CHALLENGE_CLOCK_SKEW}" -gt 10 ]; then
+  echo "STEP_UP_CHALLENGE_CLOCK_SKEW must be a whole number of seconds between 0 and 10, got '${STEP_UP_CHALLENGE_CLOCK_SKEW}'"
+  exit 1
+fi
+
+# optional: STEP_UP_REAUTH_FUTURE_SKEW (seconds) allowance for a future-dated auth_time.  default 5, range 0-10, the same as the CDK deployment
+if [ -z "${STEP_UP_REAUTH_FUTURE_SKEW}" ]; then
+  STEP_UP_REAUTH_FUTURE_SKEW=5
+fi
+case "${STEP_UP_REAUTH_FUTURE_SKEW}" in
+  *[!0-9]*) future_skew_is_number=no ;;
+  *) future_skew_is_number=yes ;;
+esac
+if [ "${future_skew_is_number}" != "yes" ] || [ "${STEP_UP_REAUTH_FUTURE_SKEW}" -lt 0 ] || [ "${STEP_UP_REAUTH_FUTURE_SKEW}" -gt 10 ]; then
+  echo "STEP_UP_REAUTH_FUTURE_SKEW must be a whole number of seconds between 0 and 10, got '${STEP_UP_REAUTH_FUTURE_SKEW}'"
   exit 1
 fi
 
@@ -55,6 +97,9 @@ echo "ENV_PREFIX: ${ENV_PREFIX}"
 echo "COGNITO_UP_ARN: ${COGNITO_UP_ARN}"
 echo "COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID}"
 echo "SESSION_TABLE_ITEM_TTL: ${SESSION_TABLE_ITEM_TTL}"
+echo "STEP_UP_MAX_REAUTH_AGE: ${STEP_UP_MAX_REAUTH_AGE}"
+echo "STEP_UP_CHALLENGE_CLOCK_SKEW: ${STEP_UP_CHALLENGE_CLOCK_SKEW}"
+echo "STEP_UP_REAUTH_FUTURE_SKEW: ${STEP_UP_REAUTH_FUTURE_SKEW}"
 echo "WORKING_DIR: ${WORKING_DIR}"
 echo "NODE_ENV: ${NODE_ENV}"
 echo
@@ -95,7 +140,7 @@ echo "create/update lambda"
 module_zip_path=`ls ${module_zip}/${dist_name_zip}`
 
 # function environment, used when the function is created and when it is updated
-lambda_environment="Variables={NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN},COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID},SESSION_TABLE_ITEM_TTL=${SESSION_TABLE_ITEM_TTL}}"
+lambda_environment="Variables={NODE_ENV=${NODE_ENV},ENV_PREFIX=${ENV_PREFIX},COGNITO_ISSUER=https://cognito-idp.${AWS_REGION}.amazonaws.com,COGNITO_USER_POOL_ARN=${COGNITO_UP_ARN},COGNITO_CLIENT_ID=${COGNITO_CLIENT_ID},SESSION_TABLE_ITEM_TTL=${SESSION_TABLE_ITEM_TTL},STEP_UP_MAX_REAUTH_AGE=${STEP_UP_MAX_REAUTH_AGE},STEP_UP_CHALLENGE_CLOCK_SKEW=${STEP_UP_CHALLENGE_CLOCK_SKEW},STEP_UP_REAUTH_FUTURE_SKEW=${STEP_UP_REAUTH_FUTURE_SKEW}}"
 
 # check if lambda exits:
 # if yes, run "aws update-function-configuration", wait for it to finish, then run "aws update-function-code"
