@@ -473,6 +473,36 @@ class CognitoToken {
   }
 
   /**
+   * Extract the `sub` (subject) claim.  This is Cognito's immutable unique user id and is present on
+   * both access and id tokens.  Used to bind an access token and an id token to the same user.
+   * @return {string} sub claim, or empty string when absent
+   */
+  public getSubClaim(): string {
+    try {
+      const decoded = jwtDecode<JwtPayload>(this.token);
+      return decoded.sub || '';
+    } catch ( e ) {
+      throw new Error('invalid token');
+    }
+  }
+
+  /**
+   * Extract the `auth_time` claim: the epoch-seconds time of the end-user authentication event.
+   * Cognito preserves `auth_time` across a token refresh, so a refreshed token keeps the original
+   * authentication time; only a fresh sign-in advances it.  This property is what lets step-up
+   * require a recent re-authentication that a stolen (or merely refreshed) token cannot satisfy.
+   * @return {number} auth_time in epoch seconds, or 0 when absent
+   */
+  public getAuthTimeClaim(): number {
+    try {
+      const decoded = jwtDecode<JwtPayload & { auth_time?: number }>(this.token);
+      return decoded.auth_time || 0;
+    } catch ( e ) {
+      throw new Error('invalid token');
+    }
+  }
+
+  /**
    * Verify current token with aws-jwt-verify: signature (user pool JWKS), `exp`, `iss`
    * (derived from the user pool id), `token_use` and client id (`client_id` claim of an
    * access token, `aud` claim of an id token).
