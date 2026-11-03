@@ -31,7 +31,12 @@ class ReauthHandler extends Component {
   }
 
   handlePasswordSubmit() {
-    this.props.onPassword(this.state.password);
+    // Capture the submitted password in a local and clear it from component state before handing it
+    // off, so the secret never lingers in the controlled input across wrong-password retries, the MFA
+    // stage, a session-ending reset, or successful completion.  onPassword runs from the setState
+    // callback, after the field has been emptied.
+    const { password } = this.state;
+    this.setState({ password: '' }, () => this.props.onPassword(password));
   }
 
   handleMfaSubmit() {
