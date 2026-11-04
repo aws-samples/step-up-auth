@@ -7,11 +7,11 @@ skinparam defaultFontSize 12
 skinparam maxMessageSize 330
 skinparam sequenceMessageAlign left
 
-title Step-up Authentication Flow
+title Step-up Authentication Flow (challenge-bound re-authentication)
 
 actor User
 participant UserAgent #LightGreen
-participant "Mobile\nDevice" as Mobile #Orange
+participant "Authenticator app\nor phone (SMS)" as Mobile #Orange
 participant Cognito #Orange
 box "Privilege API" #DDDDDD
 participant "API Gateway" as PrivApi #LightSalmon
@@ -27,7 +27,9 @@ end box
 participant "DynamoDB\nSession" as Session #LightBlue
 
 User -> UserAgent : login
-UserAgent -> Cognito : InitiateAuth
+UserAgent -> Cognito : InitiateAuth (username, password via SRP)
+Cognito --> UserAgent : MFA challenge
+UserAgent -> Cognito : RespondToAuthChallenge (MFA code)
 Cognito --> UserAgent : ID token, access token
 User -> UserAgent : perform privilege operation\n/transfer
 UserAgent -> PrivApi : /transfer\nAuthorization: Bearer <access token>
@@ -67,44 +69,72 @@ else STEP_UP_REQUIRED
   end
 end
 
-UserAgent -> StepUpApi : /initiate-auth - trigger step-up challenge if 401 was received\nIdentification: <ID token>\nAuthorization: Bearer <access token>
-StepUpApi -> StepUpApi : Cognito authorizer validates\nID token (invalid: 401)
-StepUpApi -> Initiate : invoke Lambda\nProxy
-Initiate -> Cognito : GetUser (access token)
-Cognito --> Initiate : MFA settings, phone number verified
-opt SMS_STEP_UP
-  Initiate -> Cognito : GetUserAttributeVerificationCode (phone_number)
-  Cognito --> Mobile : send temporary\npass code
-  Cognito --> Initiate : code sent
-end
-Initiate --> StepUpApi : return SMS_STEP_UP,\nSOFTWARE_TOKEN_STEP_UP,\nor MAYBE_SOFTWARE_TOKEN_STEP_UP
-StepUpApi --> UserAgent : return SMS_STEP_UP, SOFTWARE_TOKEN_STEP_UP, or MAYBE_SOFTWARE_TOKEN_STEP_UP
-UserAgent -> UserAgent : render pass\ncode entry\nscreen
-User -> Mobile : user retrieves temporary\npass code from device
-Mobile --> User
-User -> UserAgent : enter pass code
-UserAgent -> StepUpApi : /respond-to-challenge\nIdentification: <ID token>\nAuthorization: Bearer <access token>\nbody: step-up-type, challenge-response
-StepUpApi -> StepUpApi : Cognito authorizer validates\nID token (invalid: 401)
+== Initiate step-up: mint a one-time challenge ==
+
+UserAgent -> StepUpApi : /initiate-auth - triggered by the 401\nIdentification: <ID token>\nAuthorization: Bearer <access token>
+StepUpApi -> StepUpApi : Cognito authorizer validates the Identification\nID token; missing or invalid: 401 (before Lambda runs)
+StepUpApi -> Initiate : invoke Lambda Proxy
+Initiate -> Initiate : verify the access token and require its sub to\nequal the gateway-verified ID token sub\n(invalid or mismatch: 401)
+Initiate -> Session : create one-time challenge\nsessionId = challenge#<random id>, userId = sub\ncreateTimestamp = now\nttl = now + STEP_UP_CHALLENGE_TTL
+Session --> Initiate : challenge created
+Initiate --> StepUpApi : 200 { code: REAUTH_REQUIRED, challengeId }
+StepUpApi --> UserAgent : 200 { code: REAUTH_REQUIRED, challengeId }
+
+== Re-authenticate with Cognito ==
+
+UserAgent -> Cognito : sign out, then InitiateAuth\n(user re-enters password)
+Cognito --> UserAgent : MFA challenge
+User -> Mobile : obtain current MFA code\n(authenticator app, or SMS sent by Cognito)
+Mobile --> User : MFA code
+User -> UserAgent : enter MFA code
+UserAgent -> Cognito : RespondToAuthChallenge (MFA code)
+Cognito --> UserAgent : FRESH ID token and access token\n(new auth_time)
+
+== Respond to challenge: validate and consume ==
+
+UserAgent -> StepUpApi : /respond-to-challenge\nIdentification: <FRESH ID token>\nAuthorization: Bearer <FRESH access token>\nbody: { challengeId }
+StepUpApi -> StepUpApi : Cognito authorizer validates the Identification\nID token; missing or invalid: 401 (before Lambda runs)
 StepUpApi -> Respond : invoke Lambda Proxy
-Respond -> Respond : verify access token
-Respond -> Cognito : VerifyUserAttribute (SMS_STEP_UP) or VerifySoftwareToken (SOFTWARE_TOKEN_STEP_UP, MAYBE_SOFTWARE_TOKEN_STEP_UP)
+note right of Respond
+  Identification already passed the gateway authorizer above.
+  Here the handler rejects a missing or malformed Authorization
+  bearer token with 401 { code: UNAUTHENTICATED } (no reason)
+  before any validation runs
+end note
+Respond -> Respond : verify both tokens; require the same sub
+Respond -> Session : get challenge (sessionId = challenge#<challengeId>)
+Session --> Respond : challenge, or not found
+Respond -> Respond : challenge exists, unexpired and minted for this sub;\naccess token auth_time strictly after the challenge creation\ntime and recent (within STEP_UP_MAX_REAUTH_AGE)
+Respond -> Cognito : GetUser (FRESH access token)
+Cognito --> Respond : MFA settings (must show MFA enabled)
 
-alt verification successful
-  Cognito --> Respond : verification successful
-  Respond -> Session : update session (sessionId = access token jti)\nstepUpStatus = STEP_UP_COMPLETED\nttl = min(now + SESSION_TABLE_ITEM_TTL, token exp)
-  Session --> Respond : update successful
-else verification failed
-  Cognito --> Respond : verification failed
-  Respond -> Respond : noop
+alt a validation check fails (NO_CHALLENGE, CHALLENGE_SUB_MISMATCH, STALE_AUTH, TOKEN_MISMATCH, MFA_NOT_ENROLLED, BAD_ACCESS_TOKEN, BAD_ID_TOKEN, BAD_TOKEN, MFA_CHECK_FAILED)
+  Respond --> StepUpApi : 401 { reason } (session table unchanged)
+  StepUpApi --> UserAgent : 401 { reason }
+else all checks pass
+  Respond -> Session : delete challenge (one-time, conditional)
+  alt challenge consumed
+    Session --> Respond : challenge consumed
+    Respond -> Session : create session (sessionId = FRESH access token jti)\nstepUpStatus = STEP_UP_COMPLETED\nttl = min(now + SESSION_TABLE_ITEM_TTL, token exp)
+    alt completed row written
+      Session --> Respond : session created
+      Respond --> StepUpApi : 200 (step-up complete)
+      StepUpApi --> UserAgent : 200
+    else completed row write fails
+      Respond --> StepUpApi : 401 { reason: SESSION_WRITE_FAILED }\nchallenge already spent, so restart from /initiate-auth
+      StepUpApi --> UserAgent : 401 { reason: SESSION_WRITE_FAILED }
+    end
+  else consume fails (e.g. a concurrent completion already consumed it)
+    Respond --> StepUpApi : 401 { reason: CHALLENGE_CONSUME_FAILED }\nnothing written
+    StepUpApi --> UserAgent : 401 { reason: CHALLENGE_CONSUME_FAILED }
+  end
 end
 
-Respond --> StepUpApi : return\n200 if pass code verification successful\n401 if verification failed
-StepUpApi --> UserAgent : 200 if pass code verification successful\n401 if verification failed
-UserAgent -> PrivApi : retry /transfer
+UserAgent -> PrivApi : retry /transfer with the FRESH access token
 note right of PrivApi
-  same flow as above: the session is
-  STEP_UP_COMPLETED and its ttl is in
-  the future, so the authorizer allows
-  the call (200) until the ttl passes
+  same flow as above: the fresh token's jti now has a
+  STEP_UP_COMPLETED session whose ttl is in the future,
+  so the authorizer allows the call (200) until the ttl
+  passes.  the original access token stays un-elevated.
 end note
 @enduml
