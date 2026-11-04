@@ -9,6 +9,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 
 import { Infrastructure } from '../lib/infrastructure';
+import { PRE_TOKEN_GENERATION_HANDLER } from '../lib/infrastructure/pre-token-generation';
 import { Api } from '../lib/api';
 import { WebUI } from '../lib/webui';
 import {
@@ -285,6 +286,92 @@ describe('cognito app client hardening', () => {
   it('does not configure remembered devices (re-auth always challenges MFA)', () => {
     const [pool] = Object.values(synth()['StepUpAuthInfra/Cognito'].findResources('AWS::Cognito::UserPool'));
     expect(pool.Properties.DeviceConfiguration).toBeUndefined();
+  });
+});
+
+// ----------------------------------------
+//   pre token generation trigger (aws.cognito.signin.user.admin suppression)
+// ----------------------------------------
+
+describe('pre token generation trigger', () => {
+  let cognitoTemplate: Template;
+  beforeAll(() => { cognitoTemplate = synth()['StepUpAuthInfra/Cognito']; });
+
+  /** the user pool, and the only function in the Cognito stack (the trigger) with its logical id */
+  function poolAndTrigger() {
+    const [pool] = Object.values(cognitoTemplate.findResources('AWS::Cognito::UserPool'));
+    const functions = Object.entries(cognitoTemplate.findResources('AWS::Lambda::Function'));
+    expect(functions).toHaveLength(1);
+    const [[triggerLogicalId, trigger]] = functions;
+    return { pool, triggerLogicalId, trigger };
+  }
+
+  it('wires a V2_0 trigger on the user pool, with no legacy V1 trigger', () => {
+    const { pool, triggerLogicalId } = poolAndTrigger();
+    expect(pool.Properties.LambdaConfig).toStrictEqual({
+      PreTokenGenerationConfig: {
+        LambdaArn: { 'Fn::GetAtt': [triggerLogicalId, 'Arn'] },
+        LambdaVersion: 'V2_0'
+      }
+    });
+  });
+
+  it('keeps the pool on the Essentials feature plan, which V2_0 triggers need', () => {
+    expect(poolAndTrigger().pool.Properties.UserPoolTier).toBe('ESSENTIALS');
+  });
+
+  it('deploys the inline handler on nodejs24.x with no environment', () => {
+    const { trigger } = poolAndTrigger();
+    expect(trigger.Properties.Runtime).toBe('nodejs24.x');
+    expect(trigger.Properties.Handler).toBe('index.handler');
+    expect(trigger.Properties.Code).toStrictEqual({ ZipFile: PRE_TOKEN_GENERATION_HANDLER });
+    expect(trigger.Properties.Environment).toBeUndefined();
+  });
+
+  it('lets only this user pool invoke the trigger', () => {
+    const { triggerLogicalId } = poolAndTrigger();
+    const permissions = Object.values(cognitoTemplate.findResources('AWS::Lambda::Permission'));
+    expect(permissions).toHaveLength(1);
+    const [permission] = permissions;
+    expect(permission.Properties).toStrictEqual({
+      Action: 'lambda:InvokeFunction',
+      FunctionName: { 'Fn::GetAtt': [triggerLogicalId, 'Arn'] },
+      Principal: 'cognito-idp.amazonaws.com',
+      SourceArn: { 'Fn::GetAtt': [expect.stringMatching(/^StepUpAuthUserPool/), 'Arn'] }
+    });
+  });
+
+  it('runs under its own role that can only write its own log group', () => {
+    const { trigger } = poolAndTrigger();
+    const roleLogicalId = trigger.Properties.Role['Fn::GetAtt'][0];
+    const role = cognitoTemplate.toJSON().Resources[roleLogicalId];
+    expect(role.Type).toBe('AWS::IAM::Role');
+    expect(role.Properties.AssumeRolePolicyDocument.Statement).toStrictEqual([
+      { Action: 'sts:AssumeRole', Effect: 'Allow', Principal: { Service: 'lambda.amazonaws.com' } }
+    ]);
+    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+    expect(role.Properties.Policies).toBeUndefined();
+
+    const policies = Object.values(cognitoTemplate.findResources('AWS::IAM::Policy'))
+      .filter((p) => JSON.stringify(p.Properties.Roles).includes(roleLogicalId));
+    expect(policies).toHaveLength(1);
+    const logGroupLogicalId = trigger.Properties.LoggingConfig.LogGroup.Ref;
+    expect(policies[0].Properties.PolicyDocument.Statement).toStrictEqual([{
+      Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      Effect: 'Allow',
+      Resource: { 'Fn::GetAtt': [logGroupLogicalId, 'Arn'] }
+    }]);
+    expect(cognitoTemplate.toJSON().Resources[logGroupLogicalId].DeletionPolicy).toBe('Delete');
+  });
+
+  it('does not make the built-in Cognito authorizer require any scope, so suppressed tokens still reach the step-up endpoints', () => {
+    const methods = Object.values(synth()['StepUpAuthApi/APIG'].findResources('AWS::ApiGateway::Method'))
+      .filter((m) => m.Properties.AuthorizationType === 'COGNITO_USER_POOLS');
+    // POST /initiate-auth and POST /respond-to-challenge
+    expect(methods).toHaveLength(2);
+    for (const method of methods) {
+      expect(method.Properties.AuthorizationScopes).toBeUndefined();
+    }
   });
 });
 

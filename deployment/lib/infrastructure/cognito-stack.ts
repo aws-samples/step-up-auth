@@ -4,8 +4,12 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import { CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+
+import { PRE_TOKEN_GENERATION_HANDLER } from './pre-token-generation';
 
 export interface CognitoProps extends cdk.StackProps {
   readonly smsRole: iam.Role;
@@ -23,6 +27,9 @@ export class CognitoStack extends cdk.Stack {
     //           cognito user pool
     // ----------------------------------------
     this.userPool = new cognito.UserPool(this, "StepUpAuthUserPool", {
+      // the V2_0 pre token generation trigger below (access token customization) needs the Essentials
+      // or Plus feature plan
+      featurePlan: cognito.FeaturePlan.ESSENTIALS,
       accountRecovery: cognito.AccountRecovery.NONE,
       selfSignUpEnabled: true,
       mfa: cognito.Mfa.OPTIONAL,
@@ -45,6 +52,39 @@ export class CognitoStack extends cdk.Stack {
       // sample resources: `cdk destroy` removes the pool
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });
+
+    // ----------------------------------------
+    //   pre token generation trigger (V2_0)
+    // ----------------------------------------
+    // Removes the aws.cognito.signin.user.admin scope from every access token the pool issues, so a
+    // stolen browser access token cannot manage the user's MFA factors or attributes (see
+    // pre-token-generation.ts).  The function has its own role that can only write its own log group;
+    // the handler itself logs nothing.
+    const preTokenGenerationLogGroup = new logs.LogGroup(this, 'PreTokenGenerationLogGroup', {
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
+    const preTokenGenerationRole = new iam.Role(this, 'PreTokenGenerationRole', {
+      assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
+    });
+    preTokenGenerationRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+      resources: [preTokenGenerationLogGroup.logGroupArn]
+    }));
+    const preTokenGenerationFunc = new lambda.Function(this, 'PreTokenGenerationLambda', {
+      code: lambda.Code.fromInline(PRE_TOKEN_GENERATION_HANDLER),
+      runtime: lambda.Runtime.NODEJS_24_X,
+      handler: 'index.handler',
+      // Cognito waits at most 5 seconds for a trigger
+      timeout: cdk.Duration.seconds(5),
+      memorySize: 128,
+      role: preTokenGenerationRole,
+      logGroup: preTokenGenerationLogGroup
+    });
+    // V2_0 events let the trigger customize access tokens; the default V1_0 covers ID tokens only.
+    // addTrigger also grants cognito-idp.amazonaws.com invoke permission, limited to this pool's ARN.
+    this.userPool.addTrigger(
+      cognito.UserPoolOperation.PRE_TOKEN_GENERATION_CONFIG, preTokenGenerationFunc, cognito.LambdaVersion.V2_0);
 
     // ----------------------------------------
     //        cognito app client pool
