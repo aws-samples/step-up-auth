@@ -5,10 +5,12 @@
 > This sample was updated to fix a step-up session expiry defect and other security issues. If you deployed an earlier version, remove it with that version's `deployment/undeploy.sh`, then deploy the latest `main` as a new installation.
 >
 > - **Session expiry is now enforced in code.** Earlier versions relied on DynamoDB TTL to end a step-up session, and the authorizer didn't check `ttl`. Because DynamoDB can take days to delete expired items, a completed step-up stayed valid until the access token expired (up to 60 minutes by default), whatever `SESSION_TABLE_ITEM_TTL` was set to. The authorizer now rejects a session once its `ttl` has passed, and `ttl` is never later than the access token's expiry.
+> - **Step-up now requires a fresh re-authentication.** Earlier versions proved step-up by verifying or enrolling an MFA factor (an MFA enrolment or attribute-verification call) that the holder of a stolen access token could satisfy on its own. Step-up is now a fresh Cognito sign-in (password plus the user's existing MFA) bound to a one-time, server-issued challenge: the completion is accepted only when the freshly authenticated token's `auth_time` falls after the challenge was created, so a stolen access, id or refresh token can no longer complete step-up. See [Initiate Endpoint](#initiate-endpoint) and [Respond to Challenge Endpoint](#respond-to-challenge-endpoint).
+> - **Amazon Cognito native step-up.** Amazon Cognito now offers [native step-up authentication with `acr`/`amr` claims](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-step-up-authentication.html) (rolling out); this sample does not depend on it.
 > - **Other fixes:** the respond-to-challenge function now waits for the access token signature check and for the session update to be saved. Debug logs redact AWS credentials and tokens. The Lambda role can access only this solution's DynamoDB tables. The authorizer denies requests it can't evaluate, and an API's `STEP_UP_DENY` setting now applies even when the caller has completed step-up.
 > - **Platform:** the Lambda functions run on Node.js 24, the deployment uses AWS CDK v2, and the web app uses Amplify JS v6.
 > - **If you deployed an earlier version with `NODE_ENV=development`,** its Lambda log groups may contain the functions' temporary AWS credentials and users' tokens. Restrict access to those log groups or delete them.
-> - **Blog posts:** [Part 1](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-1-solution-overview/) and [Part 2](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-2-deploy-and-test-the-solution/) describe the original design. Where they differ from this README, this README and the code are current. In particular, DynamoDB TTL now only removes old session rows; it doesn't end a step-up session.
+> - **Blog posts:** [Part 1](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-1-solution-overview/) and [Part 2](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-2-deploy-and-test-the-solution/) describe the original design. Where they differ from this README, this README and the code are current. In particular, the posts describe step-up as entering a one-time code, while this sample now requires a fresh re-authentication (password, then the MFA code) bound to a one-time challenge; and DynamoDB TTL now only removes old session rows, it doesn't end a step-up session.
 
 This repository contains accompanying source code for the AWS Security Blog posts [Implement step-up authentication with Amazon Cognito, Part 1: Solution overview](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-1-solution-overview/) and [Part 2: Deploy and test the solution](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-2-deploy-and-test-the-solution/).
 
@@ -40,16 +42,12 @@ Let us traverse how user's API's request are handled by the solution, and how th
 4. Authorizer performs a look-up in DynamoDB setting table to check whether current request needs elevated privilege (or step-up privilege).  In setting table, you can define which API actions requires elevated privilege.  You can additionally bundle APIs into a group by defining the group attribute.  This allows you to further segregate privileged API's especially in a large-scale deployment.  If the API's setting is `STEP_UP_DENY`, the authorizer returns a deny policy (403), even if the user has completed step-up.  If the API has no setting, or its setting is `STEP_UP_NOT_REQUIRED`, the authorizer allows the call without checking the session table.
 5. If API request requires elevated privilege (`STEP_UP_REQUIRED`), Authorizer will check for an existing step-up session for this specific user in session table.  The key for this table will be the “JTI” of the access_token (which can be obtained after token verification).
 6. If a completed step-up session (`STEP_UP_COMPLETED`) exists and its `ttl` hasn't passed, then authorization will be given.  Otherwise the authorizer creates a new `STEP_UP_REQUIRED` session for the access_token JTI, and an un-authorized access response (401 HTTP code) will be sent back from lambda authorizer indicating that user requires elevated privilege.
-7. Client app will initiate a step-up action by calling another API /initiate-auth. This action is protected by Cognito Authorizer, which reads the ID token from the `Identification` header.  The client needs to pass a valid ID token in the `Identification` header and a valid access_token in the authorization header
-8. The call will be forwarded to a lambda function that will initiate the step-up action with end-user. The function will first call Cognito API GetUser to find out user’s MFA settings. Depends on which MFA type is enabled for the user, the function will behave as below:
-  a. If user doesn’t have MFA enabled but has a verified phone number, the function will trigger SMS_STEP_UP
-  b. If user doesn’t have MFA enabled and no verified phone number then the function will return MAYBE_SOFTWARE_TOKEN_STEP_UP code (could be extended to allow step-up using verified email if one exists)
-  c. If user has SMS_MFA enabled, then the function will call Cognito API GetUserAttributeVerificationCode to trigger SMS_STEP_UP to the user and respond to client app with “SMS_STEP_UP” to indicate that a code has been sent to user using SMS.
-  d. If user has SOFTWARE_TOKEN_MFA enabled then the function will return SOFTWARE_TOKEN_STEP_UP without calling any Cognito APIs (since software token code will be obtained from an authenticator app).
-9. Client app will present the UI to collect response to step-up challenge.  The app will call another API /respond-to-challenge; client will pass the ID token in the `Identification` header, access_token in authorization header, and step-up challenge type together with the response provided by the user to step-up challenge in the request body. This endpoint is protected by Cognito Authorizer.
-10. The call will be forwarded to lambda function that will verify the response with Cognito using VerifyUserAttribute API (in case of SMS_STEP_UP) or VerifySoftwareToken API (in case of SOFTWARE_TOKEN_STEP_UP) depends on the type of step-up action that was returned from /initiate-auth API. Cognito response will indicate whether verification was successful.
-11. If Cognito response in previous step was successful, the lambda function associated with /respond-to-challenge API will update the record that the authorizer created in session table (the access_token JTI is the key) and set its stepUpStatus to STEP_UP_COMPLETED.  This record will indicate that the user has completed step-up authentication. The record's TTL is set to the lesser of the remaining period in access_token timeout or default TTL value set in lambda function as configurable environment variable, SESSION_TABLE_ITEM_TTL.  Ideally, for a step-up session, TTL value should be less than the access_token expiry time.
-12. Client app can re-try the original call to the protected API and this call should now succeed since an active step-up session exists for the user. Calls to other protected APIs that require step-up should also succeed as long as the step-up session hasn’t expired.
+7. Prompted by the 401, the client app calls the /initiate-auth API.  This endpoint is protected by the API Gateway Cognito authorizer, which verifies the ID token passed in the `Identification` header.  The client also passes its access token in the `Authorization` header.
+8. The call is forwarded to the initiate Lambda.  The function verifies the caller's access token and requires its `sub` to equal the `sub` of the gateway-verified ID token, so a caller can only start step-up for the user Cognito authenticated (a forged or victim-substituted access token is rejected with 401).  It then mints a one-time, server-bound challenge: a random 128-bit `challengeId`, a `challenge#<challengeId>` row in the session table holding the user's `sub` and a server-set creation time, and a `ttl` of the creation time plus `STEP_UP_CHALLENGE_TTL`.  It returns `{"code":"REAUTH_REQUIRED","challengeId":"..."}`.  The initiate function no longer reads the user's MFA settings and sends no SMS.
+9. Prompted by `REAUTH_REQUIRED`, the client re-authenticates the user with Cognito: it signs the user out locally and signs in again with the password, then completes the MFA challenge Cognito raises (a code from the authenticator app for Software Token MFA, or an SMS code Cognito sends for SMS MFA).  A wrong password or wrong code can be retried.  This produces a fresh ID token and access token with a new `auth_time`.
+10. The client calls the /respond-to-challenge API, passing the fresh access token in the `Authorization` header, the fresh ID token in the `Identification` header and `{"challengeId"}` in the JSON body.  This endpoint is also protected by the Cognito authorizer.  The respond Lambda accepts step-up only when all of these hold: both tokens verify (signature, expiry, issuer, `token_use`, app client) and share the same `sub`; the challenge exists, has not expired and was minted for that `sub`; the access token's `auth_time` is after the challenge creation time (minus a small clock-skew allowance) and within `STEP_UP_MAX_REAUTH_AGE` of now (and not implausibly in the future); and Cognito `GetUser` shows the user has an MFA factor enabled.  A stolen or merely refreshed token fails the `auth_time` check because its authentication predates the challenge.
+11. The function validates first and only then writes.  A failure during validation (bad or mismatched tokens, a missing/expired/wrong-subject challenge, a stale `auth_time`, or no MFA enrolled) returns a 401 and leaves the session table unchanged.  If every check passes, it consumes the one-time challenge with a single conditional delete (so it cannot be replayed) and *then* writes a `STEP_UP_COMPLETED` row keyed by the **fresh** access token's JTI, with `ttl = min(now + SESSION_TABLE_ITEM_TTL, access token exp)`.  Because the challenge is consumed before the completed row is written, a failure to write that row (`SESSION_WRITE_FAILED`) leaves the challenge already spent, so the user must start a new step-up from /initiate-auth.  Every failure from the respond Lambda returns a short machine-readable `reason` (see [Respond to Challenge Endpoint](#respond-to-challenge-endpoint)).  The two header guards are separate: a missing or invalid `Identification` ID token is rejected by the API Gateway Cognito authorizer (its own 401) before this Lambda runs; once `Identification` is accepted, a missing or malformed `Authorization` bearer token is rejected by the handler with `{"code":"UNAUTHENTICATED"}` and no `reason`.
+12. The client re-tries the privileged API with the **fresh** access token.  The authorizer now finds its completed session and allows the call (200) until the `ttl` passes; other protected APIs that require step-up also succeed until then.  The original access token stays un-elevated, so a copy of it cannot ride along on the completed step-up.
 
 These sequences are better illustrated in the sequence diagram below.
 
@@ -61,11 +59,11 @@ Now let’s talk about the components that make up the step-up auth.
 
 ### Step-up authentication data design
 
-Step-up authentication solution relies on two tables, a `session` table and a `setting` table.  The session table contains user's step-up session information where as `setting` table contains an API step-up configuration.  API Gateway Authorizer (discussed in next section), checks `setting` table to determine if API request requires step-up session.  The authorizer creates an entry in `session` table when an API requires step-up session, and the respond-to-challenge function updates the entry when step-up session is completed.
+Step-up authentication solution relies on two tables, a `session` table and a `setting` table.  The session table contains user's step-up session information where as `setting` table contains an API step-up configuration.  API Gateway Authorizer (discussed in next section), checks `setting` table to determine if API request requires step-up session.  The authorizer creates a `STEP_UP_REQUIRED` entry in the `session` table when an API requires step-up, the initiate function adds a one-time challenge row, and the respond-to-challenge function writes a `STEP_UP_COMPLETED` entry keyed by the freshly re-authenticated access token once step-up succeeds.
 
 A sample record in this table is given below.  Let's go through each attribute:
 
-- sessionId represents the jti claim of user's access token.  A user initiates step-up auth using an access_token that they received from Cognito /token endpoint.  sessionId is the primary key for the table.
+- sessionId represents the jti claim of user's access token.  A user initiates step-up auth using an access_token that they received from Cognito /token endpoint.  sessionId is the primary key for the table.  The one-time challenge rows that the initiate function writes use `challenge#<challengeId>` as the sessionId instead, so they never collide with an access-token JTI.
 - clientId is user's client id present in access_token
 - token is an optional field where we can actually store a hashed version of access_token.  By default, however, this field is set to the same value as sessionId
 - referrerUrl is the API endpoint that trigger the step-up authentication
@@ -76,7 +74,7 @@ A sample record in this table is given below.  Let's go through each attribute:
 - userId is extracted from access_token and stored in the table for reference
 - createTimestamp represents when this item was created
 - lastUpdateTimestamp represents when this session item was last updated.
-- ttl is the epoch time (in seconds) at which the step-up session expires.  It is set to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)`, so a step-up session never outlives the access token it was created for.  `SESSION_TABLE_ITEM_TTL` (seconds) is set on both the Authorizer lambda and the respond-to-challenge lambda, because the authorizer writes the `STEP_UP_REQUIRED` row and the challenge lambda writes the `STEP_UP_COMPLETED` row.  The CDK deployment sets it from the CDK context value `session_table_item_ttl`, which defaults to 900 seconds (15 minutes).  The `deploy-awscli.sh` scripts of the Authorizer and respond-to-challenge modules also set it, from the `SESSION_TABLE_ITEM_TTL` environment variable (default 900), when they create or update the function.  If the environment variable is not set at all (for example, when a lambda is deployed another way), the code falls back to 86400 seconds (24 hours).
+- ttl is the epoch time (in seconds) at which the row expires.  For a step-up session row it is set to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)`, so a step-up session never outlives the access token it was created for.  `SESSION_TABLE_ITEM_TTL` (seconds) is set on the Authorizer lambda (which writes the `STEP_UP_REQUIRED` row), the respond-to-challenge lambda (which writes the `STEP_UP_COMPLETED` row) and the initiate lambda (which uses the same session-table client).  The CDK deployment sets it from the CDK context value `session_table_item_ttl`, which defaults to 900 seconds (15 minutes) and is validated to the range 60–900.  The `deploy-awscli.sh` scripts of those modules also set it, from the `SESSION_TABLE_ITEM_TTL` environment variable (default 900, range 60–900).  If the variable is missing or out of range, the code falls back to the secure default of 900 seconds and logs a warning.  The one-time challenge row that the initiate lambda writes is separate: its lifetime is governed by `STEP_UP_CHALLENGE_TTL`, not `SESSION_TABLE_ITEM_TTL` (see [Initiate Endpoint](#initiate-endpoint)).
   - Expiry is enforced in code: the authorizer treats a session whose `ttl` is missing or not in the future as expired and starts a new step-up challenge (401).
   - DynamoDB TTL is enabled on this attribute only to delete old rows.  DynamoDB can take up to a few days to delete an expired item, so the deletion is cleanup, not access control.
 
@@ -135,27 +133,42 @@ Authorizer uses purpose build `auth-sdk` code to interface with both `sessions` 
 
 ### Initiate Endpoint
 
-The initiate endpoint is called by the frontend after the API Gateway returns a 401 response asking caller for an additional challenge, starting the step-up flow. The role of the initiate endpoint is simply to determine what method of multi-factor authentication the user prefers (either software token or SMS MFA), return that data to the client, and (if the user prefers SMS MFA), send a SMS with a code to the user. If the user prefers software token MFA, sending a code to the user isn’t necessary, since software token code generation is handled by the software token itself rather than Cognito.
+The initiate endpoint is called by the frontend after the API Gateway returns a 401, to start the step-up flow.  Its role is to mint a one-time, server-bound challenge that the user will later prove they can satisfy by re-authenticating.  It does **not** read the user's MFA configuration and sends no SMS.
 
-The initiate endpoint checks several preferences (provided by the Cognito [GetUser](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_GetUser.html) API action) to determine whether the user prefers software token or SMS MFA, including the user’s preferred MFA setting, their list of enabled MFA methods, and whether or not they have a verified phone number. See the below flowchart for the full decision logic.
+The endpoint requires no body parameters.  It is protected by the API Gateway Cognito authorizer, which verifies the Cognito ID token passed in the `Identification` header; the client also passes its access token in the `Authorization` header.  The Lambda cryptographically verifies that access token and requires its `sub` to equal the `sub` of the gateway-verified ID token.  Because the challenge subject comes from the gateway-verified ID token, not from the unverified `Authorization` value, a caller can only mint a challenge for the exact user Cognito authenticated; a forged or victim-substituted access token is rejected with a generic 401.
 
-![](documentation/initiate-auth-mfa-decision.png)
-
-The initiate endpoint does not require any extra parameters, it only requires the Cognito access token to be passed in the Authorization header of the request, and the Cognito ID token in the `Identification` header, which the API Gateway Cognito authorizer checks. It uses the access token to call the Cognito [GetUser](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_GetUser.html) and [GetUserAttributeVerificationCode](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_GetUserAttributeVerificationCode.html) API actions on behalf of the user.
-
-Finally, once the initiate endpoint has determined the proper MFA method to use and (if applicable), it returns the MFA method to the frontend so that the frontend can display the correct content to the user. There are three possible options: MAYBE_SOFTWARE_TOKEN_STEP_UP, which is used when the MFA method cannot be determined, SOFTWARE_TOKEN_STEP_UP, which is used when the user prefers software token MFA, and SMS_STEP_UP, is used when the user prefers SMS MFA.
+It then creates a challenge record in the session table: a random 128-bit `challengeId`, a `challenge#<challengeId>` row holding the caller's `sub` and a server-set creation time, with `ttl` equal to the creation time plus `STEP_UP_CHALLENGE_TTL` (default 600 seconds; see [Step-up configuration](#step-up-configuration)).  The creation time — not the ttl — is the load-bearing control: the respond-to-challenge endpoint accepts step-up only when the fresh token's `auth_time` is after it.  The endpoint returns `{"code":"REAUTH_REQUIRED","challengeId":"..."}`.
 
 ### Respond to Challenge Endpoint
 
-Like the initiate endpoint, respond to challenge endpoint is called by the front-end once it receives an appropriate MFA method from initiate endpoint.  The user must respond to the challenge appropriately by invoking respond to challenge endpoint with a code and MFA method.  
+The respond-to-challenge endpoint completes step-up.  Step-up is proven by a *fresh re-authentication that this step-up request prompted*, not by verifying or enrolling an MFA factor.  Prompted by `REAUTH_REQUIRED`, the client re-authenticates the user with Cognito (the password, then the user's existing MFA — a Software Token code from an authenticator app, or an SMS code Cognito sends), which yields a fresh ID token and access token.  The client then calls this endpoint with the fresh access token in the `Authorization` header, the fresh ID token in the `Identification` header and `{"challengeId"}` (from /initiate-auth) in the JSON body.  Like initiate, it is protected by the Cognito authorizer.
 
-Respond to challenge endpoint receives two parameters in POST body, `step-up-type` indicating the MFA method and `challenge-response` containing the challenge response.  Additionally, this endpoint requires the Cognito access token to be passed in the Authorization header of the request, and the Cognito ID token in the `Identification` header, which the API Gateway Cognito authorizer checks.
+The Lambda accepts step-up only when all of the following hold:
 
-If the MFA method is `SMS_STEP_UP`, this endpoint will invoke Cognito [VerifyUserAttribute](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_VerifyUserAttribute.html) command to verify user provided challenge response, i.e. SMS code.
+- both the access token and the ID token verify (signature, expiry, issuer, `token_use`, app client id/aud);
+- both tokens belong to the same user (`sub` binding);
+- the one-time challenge for the presented `challengeId` exists, has not expired and was minted for that same `sub`;
+- the access token's `auth_time` is strictly after the challenge's creation time, allowing only `STEP_UP_CHALLENGE_CLOCK_SKEW` seconds of clock skew — a stolen or merely refreshed token, whose authentication predates the challenge, is rejected here;
+- the authentication is recent: `auth_time` is within `STEP_UP_MAX_REAUTH_AGE` of now, and not more than `STEP_UP_REAUTH_FUTURE_SKEW` seconds in the future;
+- Cognito [GetUser](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_GetUser.html) (authorized by the fresh access token) shows an MFA factor enabled, so the fresh sign-in necessarily completed MFA.
 
-If the MFA method is `SOFTWARE_TOKEN_STEP_UP` or `MAYBE_SOFTWARE_TOKEN_STEP_UP`, respond to challenge endpoint will invoke Cognito [VerifySoftwareToken](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_VerifySoftwareToken.html) command to verify challenge response sent in endpoint payload.
+The checks run in that order, and the `sessions` table is written only after they all pass.  A validation failure returns a 401, leaves the `sessions` table unchanged, and carries a short machine-readable `reason` — one of `NO_CHALLENGE`, `CHALLENGE_SUB_MISMATCH`, `STALE_AUTH`, `TOKEN_MISMATCH`, `MFA_NOT_ENROLLED`, `BAD_ACCESS_TOKEN`, `BAD_ID_TOKEN`, `BAD_TOKEN` or `MFA_CHECK_FAILED` — that never reveals a secret.  When every check passes, the function consumes the one-time challenge with a single conditional delete (so replaying the same challenge cannot complete a second time) and *then* writes a `STEP_UP_COMPLETED` row keyed by the **fresh** access token's JTI with `ttl = min(now + SESSION_TABLE_ITEM_TTL, access token exp)`.  Two more `reason` codes come from this final stage and are not symmetric with the validation failures: `CHALLENGE_CONSUME_FAILED` means the conditional delete didn't succeed (for example a concurrent completion consumed the challenge first), so nothing is written; `SESSION_WRITE_FAILED` means the challenge was already consumed but the completed row couldn't be written, which leaves the challenge spent and requires the user to start a new step-up from /initiate-auth.  Separately, the endpoint has two header guards.  The API Gateway Cognito authorizer validates the `Identification` ID token, so a missing or invalid `Identification` token is rejected by the gateway's authorizer with a 401 before this Lambda runs.  Once `Identification` is accepted, a request whose `Authorization` bearer token is missing or malformed is rejected by the handler before the responder runs, with a 401 body of `{"code":"UNAUTHENTICATED"}` and no `reason`.  A completed session is valid until its `ttl` passes; after that, the authorizer treats it as expired.  DynamoDB TTL deletes the item later, which can take a few days.
 
-Once the user provided challenge response is verified above, respond to challenge endpoint will update the `sessions` table.  Using the access token JTI, it will mark `stepUpStatus` field to `STEP_UP_COMPLETED`.  If the challenge response verification step fails, no changes are made to `sessions` table.  The completed session is valid until its `ttl` passes; after that, the authorizer treats it as expired.  DynamoDB TTL deletes the item later, which can take a few days.
+The step-up proof no longer uses `VerifySoftwareToken` or `VerifyUserAttribute`, and the initiate endpoint no longer calls `GetUserAttributeVerificationCode`; the old `SMS_STEP_UP`, `SOFTWARE_TOKEN_STEP_UP` and `MAYBE_SOFTWARE_TOKEN_STEP_UP` codes are gone.  MFA **enrolment** in the web app's Setting page is unchanged and still uses `AssociateSoftwareToken` / `VerifySoftwareToken`, which is their correct purpose.
+
+### Step-up configuration
+
+The step-up timing and session parameters are Lambda environment variables with secure defaults and validated ranges.  A Lambda that receives a missing or out-of-range value logs a warning that names the variable (never the value) and falls back to the default, so a bad value can never widen a security window.  The CDK context parser validates the same ranges and fails the deployment on an invalid value.  Set them through CDK context, the `deploy.sh` / `undeploy.sh` environment variables, or the per-module `deploy-awscli.sh` scripts.
+
+| Variable | Set on | CDK context key | Default | Range (seconds) | Purpose |
+|---|---|---|---|---|---|
+| `STEP_UP_CHALLENGE_TTL` | initiate | `step_up_challenge_ttl` | 600 | 60–900 | Lifetime of a one-time challenge; it only needs to outlive the user's re-authentication. |
+| `STEP_UP_CHALLENGE_CLOCK_SKEW` | respond-to-challenge | `step_up_challenge_clock_skew` | 1 | 0–10 | Clock-skew allowance for the "authenticated after the challenge" check.  Kept tiny; widening it would re-open the stolen-token window. |
+| `STEP_UP_REAUTH_FUTURE_SKEW` | respond-to-challenge | `step_up_reauth_future_skew` | 5 | 0–10 | Allowance for an `auth_time` slightly ahead of the Lambda's clock. |
+| `STEP_UP_MAX_REAUTH_AGE` | respond-to-challenge | `step_up_max_reauth_age` | 120 | 30–900 | How recent the re-authentication must be.  The floor keeps it usable for a real password + MFA sign-in; the ceiling stops it becoming a long replay window. |
+| `SESSION_TABLE_ITEM_TTL` | initiate, respond-to-challenge, authorizer | `session_table_item_ttl` | 900 | 60–900 | Step-up session lifetime (`STEP_UP_REQUIRED` and `STEP_UP_COMPLETED` rows); the row `ttl` is also capped at the access token's expiry. |
+
+`SESSION_TABLE_ITEM_TTL` does not affect the challenge lifetime: the initiate function derives the challenge `ttl` from `STEP_UP_CHALLENGE_TTL` alone.  Setting it on the initiate function only silences the fallback warning from the shared session-table client.
 
 ### Deployment
 
@@ -221,7 +234,7 @@ export ENV_PREFIX=dev
 
 The following environment variables are optional:
 
-- `SESSION_TABLE_ITEM_TTL`: step-up session lifetime in seconds (a positive integer).  `deploy.sh` passes it as the CDK context value `session_table_item_ttl`, which sets `SESSION_TABLE_ITEM_TTL` on the Authorizer and respond-to-challenge Lambda functions.  Default: 900.
+- Step-up timing and session variables: `SESSION_TABLE_ITEM_TTL`, `STEP_UP_CHALLENGE_TTL`, `STEP_UP_CHALLENGE_CLOCK_SKEW`, `STEP_UP_REAUTH_FUTURE_SKEW` and `STEP_UP_MAX_REAUTH_AGE`.  `deploy.sh` / `undeploy.sh` forward each one it sees to the matching CDK context key, and the deployment fails on an out-of-range value.  If a variable is unset, the deployment uses that setting's secure default.  For the exact defaults, validated ranges, CDK context keys and which Lambda functions each one is set on, see the single canonical [Step-up configuration](#step-up-configuration) table above — for example `SESSION_TABLE_ITEM_TTL` defaults to 900 seconds, is bounded to 60–900, and is set on the initiate, respond-to-challenge and authorizer functions.
 - `CDK_TAGS`: space-separated `key=value` pairs, for example `CDK_TAGS="project=step-up-auth owner=me"`.  Each pair is passed as `--tags key=value` to both `cdk bootstrap` and `cdk deploy`.
 - `CDK_OUTPUTS_FILE`: path of a file that keeps the stack outputs (user pool id, app client id, API stage URL, bucket name, CloudFront domain) after the script exits.  Without it, the outputs go to a temporary file that is deleted when the script ends.
 
@@ -262,7 +275,7 @@ The Lambda functions log at `debug` level when `NODE_ENV=development` and at `in
 - A JWT is never logged in full.  It is replaced with a summary: the first 12 characters, the header `kid`/`alg`, and the claims `sub`, `username`, `cognito:username`, `jti`, `exp`, `iat`, `token_use`, `scope`, `client_id` and `aud`.
 - `Authorization` and `Identification` header values are replaced with the JWT summary (for a bearer JWT) or `<masked>`.
 
-Other personal data isn't redacted.  For example, at `debug` level the initiate function logs the Cognito `GetUser` response, which includes user attributes such as the email address and phone number.
+Some personal data still appears: the JWT summary above includes user identifiers (`sub`, `username` / `cognito:username`), so a `debug` log identifies the authenticated user even though the raw token and its other claims are not logged.
 
 For local debugging outside Lambda, `LOG_RAW_SECRETS=true` turns redaction off.  It has no effect inside Lambda (when `AWS_LAMBDA_FUNCTION_NAME` is set).
 
@@ -297,49 +310,63 @@ Log into your AWS account and go to DynamoDB service console.  Locate the step-u
 }
 ```
 
-Launch your web browser and to load the CloudFront URL.  You will be presented with a login screen.
+Launch your web browser and load the CloudFront URL.  You will be presented with a login screen.
 
 ![](documentation/web-app-1.png)
 
-Register a new user.  Make sure that the email address and phone numbers are valid.  Upon clicking Register button, you will be prompted to enter verification code.  Check your email for the verification code.
+Register a new user.  Use an email address you can receive mail at: Cognito emails a verification code that you must enter to confirm the account, and the phone number is used for SMS MFA.  The default Cognito email sender is for testing only and has a low [daily sending limit](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html); for automated tests, create users with the [admin-create-user](https://docs.aws.amazon.com/cli/latest/reference/cognito-idp/admin-create-user.html) API (with `--message-action SUPPRESS`) and set a password with `admin-set-user-password`, which send no email.
 
 ![](documentation/web-app-2.png)
 
-You will be sent back to the login screen.  Login in with the user that you just registered.  You will see the welcome screen.
+You are returned to the login screen.  Log in with the user you just registered to reach the welcome screen.
 
 ![](documentation/web-app-3.png)
 
-Go into Setting menu and select SMS as Preferred MFA.
+Go into the Setting menu and choose a Preferred MFA.  The example below selects SMS; you can equally enrol and prefer Software Token (an authenticator app).  Step-up requires an enrolled MFA factor, and the re-authentication below works the same way for either factor.
 
 ![](documentation/web-app-4.png)
 
-Now, go into StepUp Auth menu and invoke Transfer API.  You should see a 401 challenge response.  At the same time, you should receive a one-time-password (OTP) on your device from Cognito.  
+Go into the StepUp Auth menu and choose Invoke Transfer API.  Because /transfer requires step-up, you get a 401 and the app starts step-up by asking you to re-authenticate, beginning with your password.
 
 ![](documentation/web-app-5.png)
 
-Use that OTP and fill “Enter OTP” field.  Hit the submit button.  This sends the OTP to respond-to-challenge endpoint.  Once OTP is verified, the endpoint will return a success or failure.  
+Re-enter your password and select Re-authenticate.  The app signs you back in with Cognito, which raises your MFA challenge and asks for the current MFA code (an SMS code, or the code from your authenticator app as shown here).
 
 ![](documentation/web-app-7.png)
 
-If the verification passes, you can reinvoke the transfer API by hitting  Invoke Transfer API button.
+Enter the MFA code and select Verify.  The app sends the fresh tokens and the one-time challenge id to the respond-to-challenge endpoint; on success it shows "Complete! Invoke API again."  Select Invoke Transfer API again, and with the fresh, elevated access token the call now succeeds.
 
 ![](documentation/web-app-6.png)
 
-Congratulations!  You’ve successfully performed a step-up authentication.
+Congratulations!  You've successfully performed a step-up authentication.
 
-The step-up session ends after `SESSION_TABLE_ITEM_TTL` seconds (900 by default), or earlier if the access token expires first.  After that, Invoke Transfer API returns 401 again and you have to complete a new challenge.
-
-Experiment with the sample web application and setup Software Token under Setting menu.  Software Token requires that you must have Google Authenticator , or alike application on your mobile device.  When prompted for a OTP code when calling the privileged API (sample /transfer API), use the temporary code from the software token application.
+The step-up session ends after `SESSION_TABLE_ITEM_TTL` seconds (900 by default), or earlier if the access token expires first.  After that, Invoke Transfer API returns 401 again and you re-authenticate to start a new step-up.  Re-authentication always prompts for MFA, because the user pool does not remember devices.
 
 ## Additional considerations
 
-This solution uses several Cognito APIs to provide step-up authentication functionality as described. Amazon Cognito applies rate limiting on all API categories (https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html#category_operations) and rapid calls that exceed the assigned quota will be throttled.
+This solution calls several Amazon Cognito APIs.  Cognito applies [rate limits per API category](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html#category_operations), and calls that exceed the assigned quota are throttled.
 
-Step-up flow for a single user may include multiple API calls like GetUser, GetUserAttributeVerificationCode, VerifyUserAttribute and VerifySoftwareToken. These APIs have different rate limits, the effective rate limit / requests per second (RPS) that your privileged and protected API can achieve will be equivalent to the lowest category rate limit among these APIs. Using the default quota, your application can achieve *25 SMS_STEP_UP RPS* (VerifyUserAttribute) and *25 SOFTWARE_TOKEN_STEP_UP RPS* (VerifySoftwareToken).  Cognito also limits each user to 5 GetUserAttributeVerificationCode and 15 VerifyUserAttribute requests per hour, so a user can request at most 5 SMS step-up codes per hour.  The initiate endpoint returns 429 when Cognito rejects the request with `LimitExceededException`.
+Because step-up now re-authenticates the user, the Cognito calls on the step-up path are the sign-in operations [InitiateAuth and RespondToAuthChallenge](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_InitiateAuth.html) (the user-authentication category) performed by the client during re-authentication, and [GetUser](https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_GetUser.html) (the user-read category), which the respond-to-challenge endpoint uses to confirm an MFA factor is enabled.  The earlier step-up path used `GetUserAttributeVerificationCode`, `VerifyUserAttribute` and `VerifySoftwareToken`; those are no longer on the step-up path.  Each category has its own quota, so the effective throughput of a protected API is bounded by the lowest quota among the categories its step-up flow touches.  Check your account's current quotas in the Service Quotas console rather than assuming a fixed requests-per-second figure, and note that the Cognito SMS and email senders have their own [sending limits](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html).
+
+## Security model and limitations
+
+What this step-up design protects against:
+
+- Completing step-up with a **stolen access, ID or refresh token** — including after an attacker enrols their own authenticator or changes the phone number — because completion requires a fresh re-authentication whose `auth_time` falls after the one-time challenge, and a stolen or refreshed token's authentication predates it.
+- Using **another user's ID token**: the initiate and respond endpoints bind both the challenge and the presented tokens to a single `sub`.
+- **Replaying a challenge**: the challenge is one-time and is consumed with a single conditional delete on success.
+
+What it does **not** protect against (state these plainly to anyone deploying it):
+
+- An access token stolen **after** step-up completes is elevated until the step-up session `ttl` or the token's own expiry, whichever is sooner.
+- An attacker who has **both** the user's password and the user's MFA factor can re-authenticate as the user; step-up, like any re-authentication, cannot distinguish them from the user.
+- A stolen access token still carries the `aws.cognito.signin.user.admin` scope, so it can change the user's own MFA or attributes.  That is a harassment / account-integrity concern, not a step-up bypass — it does not elevate the stolen token for a protected API.
+- Users **without** an enrolled MFA factor cannot step up: the respond endpoint requires MFA to be enabled.
+- The sample sets CORS `Access-Control-Allow-Origin: *` on the APIs.  Restricting CORS to your web origin is recommended as separate hardening and is not part of this change.
 
 ## Conclusion
 
-In this blog post, you saw how to implement step-up or step-up authentication for privileged APIs.  The solution uses Amazon Cognito User Pools for user management.
+In this blog post, you saw how to implement step-up authentication for privileged APIs by binding a one-time challenge to a fresh Amazon Cognito re-authentication.  The solution uses Amazon Cognito user pools for user management.
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
