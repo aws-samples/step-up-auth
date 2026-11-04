@@ -17,7 +17,7 @@ Prerequisites: Node.js 24 and npm 11 (the Lambda functions run on `nodejs24.x`),
 * `npx cdk diff`    compare deployed stack with current state
 * `npx cdk deploy --all`  deploy all 7 stacks to the account and region set below (`./deploy.sh` also bootstraps the account and uploads the web app)
 
-The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env` and the optional `session_table_item_ttl` (seconds, default 900).  The `AWS_ACCOUNT`, `AWS_REGION` and `NODE_ENV` environment variables, when set, take precedence over `aws_account`, `aws_region` and `node_env`.  For example, to synthesize without deploying:
+The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env`, and the optional step-up tuning values `session_table_item_ttl` (default 900, range 60–900), `step_up_challenge_ttl` (default 600, range 60–900), `step_up_max_reauth_age` (default 120, range 30–900), `step_up_challenge_clock_skew` (default 1, range 0–10) and `step_up_reauth_future_skew` (default 5, range 0–10).  An out-of-range step-up value fails the deployment.  The `AWS_ACCOUNT`, `AWS_REGION` and `NODE_ENV` environment variables, when set, take precedence over `aws_account`, `aws_region` and `node_env`.  For example, to synthesize without deploying:
 
 ```sh
 npx cdk synth -c aws_region=us-east-1 -c aws_account=123456789012 -c env_prefix=dev -c node_env=development
@@ -34,8 +34,12 @@ AWS_PROFILE
 NODE_ENV
 ENV_PREFIX
 
-Optional ENV variables:
-SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900; set on the authorizer and respond-to-challenge Lambda functions)
+Optional ENV variables (each maps to the matching CDK context value above, with the same default and range):
+SESSION_TABLE_ITEM_TTL (step-up session lifetime in seconds, default 900, range 60–900; set on the authorizer, respond-to-challenge and initiate Lambda functions)
+STEP_UP_CHALLENGE_TTL (one-time challenge lifetime in seconds, default 600, range 60–900; initiate Lambda)
+STEP_UP_MAX_REAUTH_AGE (maximum age of the accepted re-authentication in seconds, default 120, range 30–900; respond-to-challenge Lambda)
+STEP_UP_CHALLENGE_CLOCK_SKEW (allowance for the "authenticated after the challenge" check in seconds, default 1, range 0–10; respond-to-challenge Lambda)
+STEP_UP_REAUTH_FUTURE_SKEW (allowance for a future-dated auth_time in seconds, default 5, range 0–10; respond-to-challenge Lambda)
 CDK_TAGS (space-separated `key=value` pairs, passed as `--tags` to `cdk bootstrap` and `cdk deploy`)
 CDK_OUTPUTS_FILE (file that keeps the stack outputs after `deploy.sh` exits)
 

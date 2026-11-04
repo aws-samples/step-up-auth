@@ -37,7 +37,10 @@ Table structure is outlined in `lib/dynamodb/model/Session.ts`.  The CDK deploym
       BillingMode: PAY_PER_REQUEST
 ```
 
-DynamoDB TTL on `ttl` only deletes old items.  `SessionClient` sets `ttl` to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)`, and the authorizer rejects a session whose `ttl` has passed.
+DynamoDB TTL on `ttl` only deletes old items, and deletion is not immediate, so every consumer still checks `ttl` itself.  `SessionClient` writes two kinds of rows with different ttl rules:
+
+- Access-token session rows (`STEP_UP_REQUIRED` / `STEP_UP_COMPLETED`, keyed by the access token's `jti`).  `createSessionWithParams` sets `ttl` to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)` so a session never outlives its access token, and the authorizer rejects a session whose `ttl` has passed.
+- One-time challenge rows (`challenge#<challengeId>`).  `createChallengeSession` sets `ttl` to `creation time + STEP_UP_CHALLENGE_TTL` from a single clock read and deliberately bypasses the `min(..., access token exp)` calculation, so `SESSION_TABLE_ITEM_TTL` never shortens a challenge.  Challenge expiry is enforced by the respond-to-challenge Lambda, which treats a challenge whose `ttl` has passed as absent, not by the authorizer.
 
 Following Global Secondary Index (GSI) is required:
 
