@@ -17,11 +17,18 @@ Prerequisites: Node.js 24 and npm 11 (the Lambda functions run on `nodejs24.x`),
 * `npx cdk diff`    compare deployed stack with current state
 * `npx cdk deploy --all`  deploy all 7 stacks to the account and region set below (`./deploy.sh` also bootstraps the account and uploads the web app)
 
-The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env`, and the optional step-up tuning values `session_table_item_ttl` (default 900, range 60–900), `step_up_challenge_ttl` (default 600, range 60–900), `step_up_max_reauth_age` (default 120, range 30–900), `step_up_challenge_clock_skew` (default 1, range 0–10) and `step_up_reauth_future_skew` (default 5, range 0–10).  An out-of-range step-up value fails the deployment.  The `AWS_ACCOUNT`, `AWS_REGION` and `NODE_ENV` environment variables, when set, take precedence over `aws_account`, `aws_region` and `node_env`.  For example, to synthesize without deploying:
+The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env`, and the optional step-up tuning values `session_table_item_ttl` (default 900, range 60–900), `step_up_challenge_ttl` (default 600, range 60–900), `step_up_max_reauth_age` (default 120, range 30–900), `step_up_challenge_clock_skew` (default 1, range 0–10) and `step_up_reauth_future_skew` (default 5, range 0–10).  An out-of-range step-up value fails the deployment.  The user pool's MFA setting is not a context value: the CDK code fixes it at required, with the software token (authenticator app) as the only factor, and a unit test fails if that changes.  The `AWS_ACCOUNT`, `AWS_REGION` and `NODE_ENV` environment variables, when set, take precedence over `aws_account`, `aws_region` and `node_env`.  For example, to synthesize without deploying:
 
 ```sh
 npx cdk synth -c aws_region=us-east-1 -c aws_account=123456789012 -c env_prefix=dev -c node_env=development
 ```
+
+The Cognito stack creates the user pool, its web app client and a pre token generation Lambda trigger:
+
+* the user pool requires MFA with the software token (authenticator app) as the only factor, requires the `email` and `phone_number` attributes, doesn't remember devices and uses the Essentials feature plan;
+* the trigger (event version V2_0, inline code from `lib/infrastructure/pre-token-generation.ts`) removes the `aws.cognito.signin.user.admin` scope from every access token the pool issues.  It has its own role, which can only write the trigger's log group.
+
+The Lambda stack gives the respond-to-challenge function the user pool id (`USER_POOL_ID`) and a policy that allows `cognito-idp:AdminGetUser` and `cognito-idp:GetUserPoolMfaConfig` on this user pool only.
 
 ## Deployment steps
 
@@ -70,7 +77,7 @@ To remove the solution, run `undeploy.sh` with the same variables.  It runs `cdk
 cd deployment && ./undeploy.sh
 ```
 
-The Lambda CloudWatch log groups are not removed either.  `cdk.json` sets `@aws-cdk/aws-lambda:useCdkManagedLogGroup` to `true`, so CDK creates a log group for each of the four Lambda functions with a `RETAIN` removal policy, and `cdk destroy` keeps them.  The helper function that empties the web bucket also leaves its log group behind.  Their names start with `/aws/lambda/StepUpAuth`, as do the log groups of an earlier version of this sample in the same account and region.  List them, check the list, then delete them (this permanently deletes their log events):
+The Lambda CloudWatch log groups are not removed either.  `cdk.json` sets `@aws-cdk/aws-lambda:useCdkManagedLogGroup` to `true`, so CDK creates a log group for each of the four Lambda functions with a `RETAIN` removal policy, and `cdk destroy` keeps them.  The helper function that empties the web bucket also leaves its log group behind.  The pre token generation trigger's log group is the exception: it has a `DESTROY` removal policy, so `cdk destroy` deletes it.  The retained log groups' names start with `/aws/lambda/StepUpAuth`, as do the log groups of an earlier version of this sample in the same account and region.  List them, check the list, then delete them (this permanently deletes their log events):
 
 ```sh
 aws logs describe-log-groups --region "$AWS_REGION" --log-group-name-prefix /aws/lambda/StepUpAuth \
@@ -90,5 +97,15 @@ cd source/sample-web-app && npm ci
 npm start -- --env USER_POOL_ID=<UserPoolId> --env CLIENT_ID=<UserPoolClientId> \
   --env API_GATEWAY_API_NAME=step-up-auth --env API_GATEWAY_API_ENDPOINT=<StageUrl> --env AWS_REGION=us-east-1
 ```
+
+## Deploying a function with the AWS CLI scripts
+
+Each Lambda module under `source/` also has a `deploy-awscli.sh` script that creates or updates that one function against resources that already exist.  These scripts don't create the user pool.  If you use them instead of CDK, configure the user pool yourself the way the Cognito stack does:
+
+* MFA required, with the software token (authenticator app) as the only factor, and no other MFA factor;
+* the Essentials feature plan, and a pre token generation trigger with event version V2_0 that removes `aws.cognito.signin.user.admin` from every access token (the handler source is in `lib/infrastructure/pre-token-generation.ts`);
+* `email` and `phone_number` required, and no remembered devices.
+
+`source/step-up-challenge/deploy-awscli.sh` sets the function's `USER_POOL_ID` to the pool id at the end of `COGNITO_UP_ARN` and checks its shape.  Before it deploys, it reads the pool's MFA configuration (`aws cognito-idp get-user-pool-mfa-config`) and exits without deploying unless MFA is required with the software token only.  The role in `AWS_LAMBDA_ROLE_ARN` must allow `cognito-idp:AdminGetUser` and `cognito-idp:GetUserPoolMfaConfig` on that user pool, and the credentials that run the script need `cognito-idp:GetUserPoolMfaConfig` too.
 
 For further details, refer to project [README.md](../README.md)

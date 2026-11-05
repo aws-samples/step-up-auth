@@ -7,12 +7,13 @@ skinparam defaultFontSize 12
 skinparam maxMessageSize 330
 skinparam sequenceMessageAlign left
 
-title Step-up Authentication Flow (challenge-bound re-authentication)
+title Step-up Authentication Flow (challenge-bound re-authentication)\nMFA required, authenticator app only
 
 actor User
 participant UserAgent #LightGreen
-participant "Authenticator app\nor phone (SMS)" as Mobile #Orange
-participant Cognito #Orange
+participant "Authenticator\napp" as Mobile #Orange
+participant "Cognito\n(MFA required)" as Cognito #Orange
+participant "Pre token generation\nLambda" as PreToken #Orange
 box "Privilege API" #DDDDDD
 participant "API Gateway" as PrivApi #LightSalmon
 participant "Lambda\nAuthorizer" as Authorizer
@@ -26,11 +27,32 @@ participant "Respond To Challenge\nLambda" as Respond
 end box
 participant "DynamoDB\nSession" as Session #LightBlue
 
-User -> UserAgent : login
+== First sign-in: set up the authenticator app (MFA_SETUP) ==
+
+User -> UserAgent : first login
 UserAgent -> Cognito : InitiateAuth (username, password via SRP)
-Cognito --> UserAgent : MFA challenge
-UserAgent -> Cognito : RespondToAuthChallenge (MFA code)
-Cognito --> UserAgent : ID token, access token
+Cognito --> UserAgent : MFA_SETUP challenge and sign-in session (no tokens yet)
+UserAgent -> Cognito : AssociateSoftwareToken (sign-in session)
+Cognito --> UserAgent : authenticator secret
+UserAgent --> User : show QR code and setup key
+User -> Mobile : scan QR code, or enter setup key
+Mobile --> User : first code
+User -> UserAgent : enter code
+UserAgent -> Cognito : VerifySoftwareToken (sign-in session, code)
+Cognito --> UserAgent : SUCCESS
+UserAgent -> Cognito : RespondToAuthChallenge (MFA_SETUP)
+Cognito -> PreToken : pre token generation trigger (V2_0)
+PreToken --> Cognito : suppress scope aws.cognito.signin.user.admin
+Cognito --> UserAgent : ID token, access token (no admin scope)
+note right of Cognito
+  MFA can't be turned off afterwards, and no token can
+  register or replace the authenticator.  Later sign-ins
+  ask for the password, then the authenticator code,
+  as in the re-authentication below
+end note
+
+== Call a privileged API ==
+
 User -> UserAgent : perform privilege operation\n/transfer
 UserAgent -> PrivApi : /transfer\nAuthorization: Bearer <access token>
 PrivApi -> Authorizer : Authorize
@@ -83,12 +105,14 @@ StepUpApi --> UserAgent : 200 { code: REAUTH_REQUIRED, challengeId }
 == Re-authenticate with Cognito ==
 
 UserAgent -> Cognito : sign out, then InitiateAuth\n(user re-enters password)
-Cognito --> UserAgent : MFA challenge
-User -> Mobile : obtain current MFA code\n(authenticator app, or SMS sent by Cognito)
-Mobile --> User : MFA code
-User -> UserAgent : enter MFA code
-UserAgent -> Cognito : RespondToAuthChallenge (MFA code)
-Cognito --> UserAgent : FRESH ID token and access token\n(new auth_time)
+Cognito --> UserAgent : authenticator code challenge (SOFTWARE_TOKEN_MFA)
+User -> Mobile : read current code
+Mobile --> User : code
+User -> UserAgent : enter code
+UserAgent -> Cognito : RespondToAuthChallenge (authenticator code)
+Cognito -> PreToken : pre token generation trigger (V2_0)
+PreToken --> Cognito : suppress scope aws.cognito.signin.user.admin
+Cognito --> UserAgent : FRESH ID token and access token\n(new auth_time, no admin scope)
 
 == Respond to challenge: validate and consume ==
 
@@ -105,8 +129,10 @@ Respond -> Respond : verify both tokens; require the same sub
 Respond -> Session : get challenge (sessionId = challenge#<challengeId>)
 Session --> Respond : challenge, or not found
 Respond -> Respond : challenge exists, unexpired and minted for this sub;\naccess token auth_time strictly after the challenge creation\ntime and recent (within STEP_UP_MAX_REAUTH_AGE)
-Respond -> Cognito : GetUser (FRESH access token)
-Cognito --> Respond : MFA settings (must show MFA enabled)
+Respond -> Cognito : GetUserPoolMfaConfig (USER_POOL_ID)
+Cognito --> Respond : pool MFA setting (must be ON, software token only)
+Respond -> Cognito : AdminGetUser (USER_POOL_ID, username from the FRESH token)
+Cognito --> Respond : user (must be enabled, with the tokens' sub)
 
 alt a validation check fails (NO_CHALLENGE, CHALLENGE_SUB_MISMATCH, STALE_AUTH, TOKEN_MISMATCH, MFA_NOT_ENROLLED, BAD_ACCESS_TOKEN, BAD_ID_TOKEN, BAD_TOKEN, MFA_CHECK_FAILED)
   Respond --> StepUpApi : 401 { reason } (session table unchanged)

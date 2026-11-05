@@ -1,6 +1,6 @@
 <mxfile host="drawio" type="device">
   <diagram id="step-up-auth-design" name="Step-up auth design">
-    <mxGraphModel dx="1230" dy="992" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1240" pageHeight="1000" math="0" shadow="0">
+    <mxGraphModel dx="1230" dy="992" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1240" pageHeight="1200" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -13,7 +13,7 @@
           <mxGeometry x="118" y="334" width="41" height="78" as="geometry" />
         </mxCell>
         <mxCell id="clientsLabel" value="Clients" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontColor=#000000;" vertex="1" parent="1">
-          <mxGeometry x="30" y="424" width="110" height="30" as="geometry" />
+          <mxGeometry x="14" y="424" width="90" height="30" as="geometry" />
         </mxCell>
 
         <!-- privileged API path -->
@@ -34,51 +34,73 @@
         <mxCell id="initApi" value="/initiate-auth" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#F54749;gradientDirection=north;fillColor=#C7131F;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.api_gateway;" vertex="1" parent="1">
           <mxGeometry x="415" y="407" width="100" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="initLambda" value="Initiate&lt;br&gt;Auth Lambda" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+        <mxCell id="initLambda" value="Initiate&lt;br&gt;Auth Lambda" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=#ffffff;dashed=0;verticalLabelPosition=top;verticalAlign=bottom;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
           <mxGeometry x="748" y="407" width="100" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="cognito" value="Cognito User Pool" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#AD688B;gradientDirection=north;fillColor=#7D3F6A;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" vertex="1" parent="1">
+        <mxCell id="cognito" value="Cognito User Pool&lt;br&gt;(MFA required)" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#AD688B;gradientDirection=north;fillColor=#7D3F6A;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" vertex="1" parent="1">
           <mxGeometry x="418" y="610" width="100" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="preToken" value="Pre token generation&lt;br&gt;Lambda" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
+          <mxGeometry x="418" y="830" width="100" height="100" as="geometry" />
         </mxCell>
         <mxCell id="sessions" value="Auth&lt;br&gt;Sessions" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#4D72F3;gradientDirection=north;fillColor=#3334B9;strokeColor=#ffffff;dashed=0;labelPosition=left;verticalLabelPosition=middle;verticalAlign=middle;align=right;spacingRight=10;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;" vertex="1" parent="1">
           <mxGeometry x="1048" y="607" width="100" height="100" as="geometry" />
         </mxCell>
         <mxCell id="respApi" value="/respond-to-challenge" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#F54749;gradientDirection=north;fillColor=#C7131F;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.api_gateway;" vertex="1" parent="1">
-          <mxGeometry x="415" y="800" width="100" height="100" as="geometry" />
+          <mxGeometry x="415" y="1040" width="100" height="100" as="geometry" />
         </mxCell>
         <mxCell id="respLambda" value="Respond to&lt;br&gt;Auth Challenge" style="sketch=0;outlineConnect=0;fontColor=#000000;gradientColor=#F78E04;gradientDirection=north;fillColor=#D05C17;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=18;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" vertex="1" parent="1">
-          <mxGeometry x="757" y="800" width="100" height="100" as="geometry" />
+          <mxGeometry x="757" y="1040" width="100" height="100" as="geometry" />
         </mxCell>
 
-        <!-- edges -->
-        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.22;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="privApi">
-          <mxGeometry relative="1" as="geometry" />
+        <!-- edges (every edge carries a label) -->
+        <mxCell id="e2" value="call API with&lt;br&gt;access token" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.22;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="privApi">
+          <mxGeometry x="0.1" relative="1" as="geometry">
+            <mxPoint x="62" y="0" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="privApi" target="authorizer">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e3" value="authorize" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="privApi" target="authorizer">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="30" y="0" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="privApi" target="backend">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e12" value="invoke if allowed" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="privApi" target="backend">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="16" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="authorizer" target="settings">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e4" value="read API setting" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="authorizer" target="settings">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="-14" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="authorizer" target="sessions">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e5" value="read / create&lt;br&gt;session" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="authorizer" target="sessions">
+          <mxGeometry x="0.3" relative="1" as="geometry">
+            <mxPoint x="-60" y="0" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="initApi">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e7" value="on 401:&lt;br&gt;start step-up" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="initApi">
+          <mxGeometry x="0.6" relative="1" as="geometry">
+            <mxPoint x="0" y="-24" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e7b" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="initApi" target="initLambda">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e7b" value="invoke" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="initApi" target="initLambda">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="-14" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e8" value="verify access token" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=1;entryY=0.25;entryDx=0;entryDy=0;" edge="1" parent="1" source="initLambda" target="cognito">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e8" value="verify access token" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="initLambda" target="cognito">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="798" y="560" />
+              <mxPoint x="468" y="560" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="e8b" value="mint one-time challenge" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="initLambda" target="sessions">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.66;exitDx=0;exitDy=0;entryX=0;entryY=0.55;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="cognito">
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=16;labelBackgroundColor=#ffffff;exitX=1;exitY=0.66;exitDx=0;exitDy=0;entryX=0;entryY=0.55;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="cognito">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="300" y="385" />
@@ -86,69 +108,90 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.82;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="respApi">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="245" y="398" />
-              <mxPoint x="245" y="850" />
-            </Array>
+        <mxCell id="e1label1" value="initial sign-in +&lt;br&gt;authenticator setup" style="edgeLabel;html=1;align=right;verticalAlign=middle;fontSize=14;fontColor=#000000;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="0.03" relative="1" as="geometry">
+            <mxPoint x="-10" y="0" as="offset" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="e9b" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="respApi" target="respLambda">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e1label9" value="re-authenticate" style="edgeLabel;html=1;align=right;verticalAlign=middle;fontSize=14;fontColor=#000000;labelBackgroundColor=#ffffff;" vertex="1" connectable="0" parent="e1">
+          <mxGeometry x="0.26" relative="1" as="geometry">
+            <mxPoint x="-6" y="0" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e10" value="GetUser (MFA enabled?)" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="respLambda" target="cognito">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="eTrig" value="remove admin scope&lt;br&gt;from every token" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.85;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cognito" target="preToken">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="590" y="695" />
+              <mxPoint x="590" y="880" />
+            </Array>
+            <mxPoint x="72" y="0" as="offset" />
+          </mxGeometry>
         </mxCell>
-        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="respLambda" target="sessions">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e9" value="fresh tokens +&lt;br&gt;challengeId" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mobile" target="respApi">
+          <mxGeometry x="0.75" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="138" y="1090" />
+            </Array>
+            <mxPoint x="0" y="-22" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9b" value="invoke" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="respApi" target="respLambda">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="0" y="-14" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" value="AdminGetUser +&lt;br&gt;MFA required?" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="respLambda" target="cognito">
+          <mxGeometry x="-0.5" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="807" y="660" />
+            </Array>
+            </mxGeometry>
+        </mxCell>
+        <mxCell id="e11" value="consume challenge,&lt;br&gt;write completed session" style="edgeStyle=orthogonalEdgeStyle;curved=1;html=1;startArrow=classic;startFill=1;endArrow=classic;endFill=1;strokeWidth=1.5;strokeColor=#000000;fontSize=14;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="respLambda" target="sessions">
+          <mxGeometry x="0.4" relative="1" as="geometry">
+            <mxPoint x="-90" y="0" as="offset" />
+          </mxGeometry>
         </mxCell>
 
         <!-- step numbers -->
         <mxCell id="n1" value="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="300" y="498" width="44" height="44" as="geometry" />
-        </mxCell>
-        <mxCell id="authLabel1" value="initial sign-in" style="text;html=1;align=right;verticalAlign=middle;fontSize=16;fontColor=#000000;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
-          <mxGeometry x="180" y="498" width="112" height="44" as="geometry" />
+          <mxGeometry x="310" y="498" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n9auth" value="9" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="300" y="556" width="44" height="44" as="geometry" />
-        </mxCell>
-        <mxCell id="authLabel9" value="re-authenticate" style="text;html=1;align=right;verticalAlign=middle;fontSize=16;fontColor=#000000;labelBackgroundColor=#ffffff;" vertex="1" parent="1">
-          <mxGeometry x="168" y="556" width="124" height="44" as="geometry" />
+          <mxGeometry x="310" y="566" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n2" value="2" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="255" y="226" width="44" height="44" as="geometry" />
+          <mxGeometry x="200" y="226" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n3" value="3" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="580" y="226" width="44" height="44" as="geometry" />
+          <mxGeometry x="560" y="226" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n4" value="4" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="946" y="203" width="44" height="44" as="geometry" />
+          <mxGeometry x="912" y="160" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n5" value="5" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="1012" y="436" width="44" height="44" as="geometry" />
+          <mxGeometry x="1112" y="470" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n6" value="6" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
           <mxGeometry x="936" y="324" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n7" value="7" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="297" y="339" width="44" height="44" as="geometry" />
+          <mxGeometry x="300" y="318" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n8" value="8" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="706" y="540" width="44" height="44" as="geometry" />
+          <mxGeometry x="700" y="560" width="44" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="n9resp" value="10" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="288" y="753" width="44" height="44" as="geometry" />
+        <mxCell id="n10a" value="10" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
+          <mxGeometry x="150" y="960" width="44" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="n10" value="10" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="697" y="732" width="44" height="44" as="geometry" />
+        <mxCell id="n10b" value="10" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
+          <mxGeometry x="752" y="930" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n11" value="11" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="1012" y="757" width="44" height="44" as="geometry" />
+          <mxGeometry x="1112" y="960" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n12a" value="12" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
-          <mxGeometry x="300" y="44" width="44" height="44" as="geometry" />
+          <mxGeometry x="300" y="30" width="44" height="44" as="geometry" />
         </mxCell>
         <mxCell id="n12b" value="12" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#FFE6CC;strokeColor=#D79B00;fontStyle=1;fontSize=18;" vertex="1" parent="1">
           <mxGeometry x="785" y="24" width="44" height="44" as="geometry" />
