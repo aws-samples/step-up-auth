@@ -5,7 +5,9 @@ import React, { Component } from 'react';
 import { bindActionCreators } from 'redux';
 import { connect } from 'react-redux';
 import { Field, reduxForm } from 'redux-form';
-import { Segment, Form, Icon, Button, Label } from 'semantic-ui-react';
+import { Segment, Form, Icon, Button, Label, Header } from 'semantic-ui-react';
+// qrcode.react v4 has no default export; QRCodeCanvas renders the QR code into a <canvas>
+import { QRCodeCanvas } from 'qrcode.react';
 import { InputField } from '../common/CustomSemanticUIControls';
 import { Link, useNavigate } from 'react-router-dom';
 import PropTypes from 'prop-types';
@@ -40,7 +42,7 @@ class Login extends Component {
     }, 1000);
   }
 
-  onFormSubmit({ username, password, newPassword, newPasswordConfirm, code}) {
+  onFormSubmit({ username, password, newPassword, code}) {
     const {
       cognitoUser,
       mfaRequired,
@@ -48,7 +50,7 @@ class Login extends Component {
       changePassword,
       navigate} = this.props;
 
-    console.log('Login.onFormSubmit() username, password, newPassword, newPasswordConfirm, code, mfaRequired, changePassword, cognitoUser:', {username, password, newPassword, newPasswordConfirm, code, mfaRequired, changePassword, cognitoUser});
+    console.log('Login.onFormSubmit() username, mfaRequired, changePassword, cognitoUser:', {username, mfaRequired, changePassword, cognitoUser});
 
     if ((typeof mfaRequired == 'undefined' || mfaRequired == false) &&
       (typeof changePassword == 'undefined' || changePassword == false)) {
@@ -83,6 +85,7 @@ class Login extends Component {
       handleSubmit,
       changePassword,
       mfaRequired,
+      mfaSetup,
       resendCode,
       fields: { username, password, newPassword, newPasswordConfirm, code }} = this.props;
     const invalidCredentialsMessage = this.renderAlert();
@@ -168,6 +171,16 @@ class Login extends Component {
           <div className="login-page">
             <Form onSubmit={handleSubmit(this.onFormSubmit.bind(this))}>
               <div className="fill-in">
+                { mfaSetup && (
+                  <div className="totp-setup">
+                    <Header as="h4">Set up your authenticator app</Header>
+                    <QRCodeCanvas value={mfaSetup.setupUri} />
+                    <p>
+                      {"Can't scan? Enter this key: "}
+                      <code data-testid="totp-setup-key">{mfaSetup.sharedSecret}</code>
+                    </p>
+                  </div>
+                )}
                 <Field
                   name="code"
                   component={InputField}
@@ -236,6 +249,7 @@ Login.propTypes = {
   handleSubmit: PropTypes.func,
   mfaRequired: PropTypes.bool,
   mfaType: PropTypes.string,
+  mfaSetup: PropTypes.shape({ sharedSecret: PropTypes.string, setupUri: PropTypes.string }),
   resendCode: PropTypes.bool,
   fields: PropTypes.arrayOf(PropTypes.string)
 };
@@ -253,6 +267,7 @@ function mapStateToProps(state) {
     errorMessage: state.auth.error,
     mfaRequired: state.auth.mfa,
     mfaType: state.auth.mfaType,
+    mfaSetup: state.auth.mfaSetup,
     changePassword: state.auth.changePassword,
     cognitoUser: state.auth.cognitoUser
   };

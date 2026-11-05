@@ -7,11 +7,9 @@ import { Container, Form, Label } from 'semantic-ui-react';
 
 import "./ChallengeHandler.css";
 
-// Step-up re-authentication form.  Re-authentication is a two-stage flow so it works for every
-// configured factor: first the user re-enters their password (stage 1); Cognito then creates the MFA
-// challenge and, for SMS, delivers the one-time code.  Only then does the form collect the MFA code
-// (stage 2).  Collecting the code up front would be impossible for SMS, where the code does not exist
-// until the challenge is created.
+// Step-up re-authentication form.  Re-authentication is a two-stage flow: first the user re-enters
+// their password (stage 1); once Cognito accepts it and creates the MFA challenge, the form collects
+// the current code from the user's authenticator app (stage 2).
 class ReauthHandler extends Component {
   constructor(props) {
     super(props);
@@ -45,17 +43,13 @@ class ReauthHandler extends Component {
 
   render() {
     const { password, mfaCode } = this.state;
-    const { mfaRequired, mfaType } = this.props;
+    const { mfaRequired } = this.props;
 
-    // stage 2: Cognito has created the MFA challenge (and sent the SMS code, when SMS is the factor)
+    // stage 2: Cognito has created the MFA challenge
     if (mfaRequired) {
-      const codeHint = mfaType === 'SMS_MFA'
-        ? 'Enter the code just sent to your phone by SMS.'
-        : 'Enter the current code from your authenticator app.';
-
       return (
         <Container>
-          <Label pointing="below" color="orange">{codeHint}</Label>
+          <Label pointing="below" color="orange">Enter the current code from your authenticator app.</Label>
           <Form onSubmit={this.handleMfaSubmit}>
             <Form.Group>
               <Form.Input

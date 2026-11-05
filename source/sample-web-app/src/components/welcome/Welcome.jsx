@@ -3,7 +3,7 @@
 
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
-import { getCurrentUser, fetchAuthSession, updateUserAttributes } from 'aws-amplify/auth';
+import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
 import { Segment, Header, Label, Button } from 'semantic-ui-react';
 
 class Welcome extends Component {
@@ -22,7 +22,6 @@ class Welcome extends Component {
     this.dumpToken.bind(this);
     this.handleClick.bind(this);
     this.startSessionIdleCount.bind(this);
-    this.handleUpdateAttributes.bind(this);
   }
 
   componentDidMount() {
@@ -150,25 +149,6 @@ class Welcome extends Component {
     this.validateUserSession();
   }
 
-  handleUpdateAttributes(event) {
-    console.log('Welcome.handleUpdateAttributes() called', event);
-    getCurrentUser()
-      .then(user => {
-        console.log('Welcome.handleUpdateAttributes() getCurrentUser() result:', user);
-
-        updateUserAttributes({ userAttributes: { 'custom:is_admin': '0' } })
-          .then(result => {
-            console.log('Welcome.handleUpdateAttributes() updateUserAttributes result:', result);
-          })
-          .catch(err => {
-            console.log('Welcome.handleUpdateAttributes() updateUserAttributes error:', err);
-          });
-      })
-      .catch(err => {
-        console.log('Welcome.handleUpdateAttributes() getCurrentUser() error:', err);
-      });
-  }
-
   render() {
     const {
       sessionIdleTime,
@@ -192,8 +172,6 @@ class Welcome extends Component {
               {!validating && (
                 <Button onClick={e => (this.handleClick(e))}>Validate Session</Button>
               )}
-              <Button onClick={e => (this.handleUpdateAttributes(e))}>Update Custom Attribute</Button>
-
             </Header>
           </Segment>
 

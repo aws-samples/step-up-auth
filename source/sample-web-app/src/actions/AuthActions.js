@@ -16,6 +16,7 @@ import {
 import {
   AUTH_USER,
   AUTH_MFA,
+  AUTH_MFA_SETUP,
   AUTH_NEW_PASSWORD_REQUIRED,
   UNAUTH_USER,
   REGISTER_USER,
@@ -60,7 +61,10 @@ function signInWithRetry(username, password, retried) {
 // 2. New Password is required (change 'FORCE_CHANGE_PASSWORD' to 'CONFIRMED'),
 //    dispatch -> AUTH_NEW_PASSWORD_REQUIRED
 // 3. MFA confirmation is required, dispatch -> AUTH_MFA
-// 4. Handle custom auth flow 'CUSTOM_CHALLENGE'
+// 4. First sign-in: the user pool requires MFA with an authenticator app, so Cognito
+//    makes the user set one up before it issues tokens, dispatch -> AUTH_MFA_SETUP
+// 5. Handle custom auth flow 'CUSTOM_CHALLENGE'
+// The sign-in result can hold the authenticator setup key, so never log it whole.
 function handleSignInStep(output, ctx) {
   const { username, dispatch, navigate } = ctx;
   const nextStep = (output && output.nextStep) || {};
@@ -81,15 +85,20 @@ function handleSignInStep(output, ctx) {
     case 'CONFIRM_SIGN_IN_WITH_TOTP_CODE':
       dispatch({ type: AUTH_MFA, payload: { username, challengeName: 'SOFTWARE_TOKEN_MFA', signInStep } });
       return Promise.resolve();
-    case 'CONFIRM_SIGN_IN_WITH_SMS_CODE':
-      dispatch({ type: AUTH_MFA, payload: { username, challengeName: 'SMS_MFA', signInStep } });
+    case 'CONTINUE_SIGN_IN_WITH_TOTP_SETUP': {
+      // Cognito's MFA_SETUP challenge: show the setup key (and its QR code) so the user can add it to an
+      // authenticator app, then confirmSignIn() with the app's first code completes the sign-in.
+      const { totpSetupDetails } = nextStep;
+      dispatch({
+        type: AUTH_MFA_SETUP,
+        payload: {
+          username,
+          challengeName: 'MFA_SETUP',
+          sharedSecret: totpSetupDetails.sharedSecret,
+          setupUri: totpSetupDetails.getSetupUri('StepUpAuthSample', username).toString()
+        }
+      });
       return Promise.resolve();
-    case 'CONTINUE_SIGN_IN_WITH_MFA_SELECTION': {
-      // user has both SMS and TOTP enabled without a preferred one: pick TOTP when allowed
-      const allowedMFATypes = nextStep.allowedMFATypes || [];
-      const challengeResponse = allowedMFATypes.includes('TOTP') ? 'TOTP' : 'SMS';
-      return confirmSignIn({ challengeResponse })
-        .then(next => handleSignInStep(next, ctx));
     }
     case 'CONFIRM_SIGN_IN_WITH_CUSTOM_CHALLENGE': {
       if (ctx.customChallengeAnswered) {
@@ -99,13 +108,13 @@ function handleSignInStep(output, ctx) {
       const challengeResponse = '5';
       return confirmSignIn({ challengeResponse })
         .then(data1 => {
-          console.log('confirmSignIn (custom challenge) data:', data1);
+          console.log('confirmSignIn (custom challenge) signInStep:', data1 && data1.nextStep && data1.nextStep.signInStep);
 
           const challengeResponse2 = '10';
           return confirmSignIn({ challengeResponse: challengeResponse2 });
         })
         .then(data2 => {
-          console.log('confirmSignIn (custom challenge) data:', data2);
+          console.log('confirmSignIn (custom challenge) signInStep:', data2 && data2.nextStep && data2.nextStep.signInStep);
           return handleSignInStep(data2, { ...ctx, customChallengeAnswered: true });
         })
         .catch(err => {
@@ -125,12 +134,12 @@ function handleSignInStep(output, ctx) {
 // Cognito - signIn()
 export function login({ username, password }, navigate) {
   return function(dispatch) {
-    console.log('actions.login(): username password:', { username, password });
+    console.log('actions.login(): signing in');
 
     // signIn (cognito)
     signInWithRetry(username, password, false)
       .then(data => {
-        console.log('actions.login():signIn() data:', data);
+        console.log('actions.login():signIn() signInStep:', data && data.nextStep && data.nextStep.signInStep);
         return handleSignInStep(data, { username, dispatch, navigate });
       })
       .catch(err => {
@@ -183,16 +192,17 @@ export function validateUserSession() {
 // Cognito - confirmSignIn() with the new password
 export function setNewPassword({ cognitoUser, newPassword }, navigate) {
   return function(dispatch) {
-    console.log('actions.setNewPassword(): cognitoUSer, newPassword:', { cognitoUser, newPassword });
+    console.log('actions.setNewPassword(): setting the new password');
     const username = cognitoUser && cognitoUser.username;
 
     // confirmSignIn (cognito)
     confirmSignIn({ challengeResponse: newPassword })
       .then(data => {
-        console.log('actions.setNewPassword():confirmSignIn() data: ', data);
+        console.log('actions.setNewPassword():confirmSignIn() signInStep:', data && data.nextStep && data.nextStep.signInStep);
 
         // inspect response 'data' and check whether
-        // 1. MFA confirmation is required, dispatch->AUTH_MFA
+        // 1. authenticator setup (first sign-in) or MFA confirmation is required,
+        //    dispatch -> AUTH_MFA_SETUP or AUTH_MFA
         // 2. otherwise, authenticate user, dispatch -> AUTH_USER
         return handleSignInStep(data, { username, dispatch, navigate });
       })
@@ -230,13 +240,13 @@ export function logout(navigate) {
 // Cognito - confirmSignIn() with the MFA code
 export function confirmLogin( { cognitoUser, code, mfaType }, navigate) {
   return function(dispatch) {
-    console.log('actions.confirmLogin(): cognitoUSer, code, mfaType:', { cognitoUser, code, mfaType });
+    console.log('actions.confirmLogin(): confirming the MFA code, mfaType:', mfaType);
     const username = cognitoUser && cognitoUser.username;
 
     // confirmSignIn (cognito)
     confirmSignIn({ challengeResponse: code })
       .then( data => {
-        console.log('actions.confirmLogin():confirmSignIn() data: ', data);
+        console.log('actions.confirmLogin():confirmSignIn() signInStep:', data && data.nextStep && data.nextStep.signInStep);
         return handleSignInStep(data, { username, dispatch, navigate });
       })
       .catch(err => {
@@ -250,7 +260,7 @@ export function confirmLogin( { cognitoUser, code, mfaType }, navigate) {
 // Cognito - signUp()
 export function register( { username, password, email, phone }, navigate) {
   return function(dispatch) {
-    console.log('actions.register(): username, password, email, phone: ', { username, password, email, phone });
+    console.log('actions.register(): username, email, phone: ', { username, email, phone });
 
     const userAttributes = { email, ...(phone ? { phone_number: phone } : {}) };
 
@@ -366,7 +376,7 @@ export function forgotPassword( { username } ) {
 // Cognito - confirmResetPassword()
 export function confirmForgotPassword( { username, code, newPassword }, navigate) {
   return function(dispatch) {
-    console.log('actions.confirmForgotPassword(): username, code, newPassword: ', { username, code, newPassword });
+    console.log('actions.confirmForgotPassword(): username: ', { username });
 
     // confirmResetPassword (cognito)
     confirmResetPassword({ username, confirmationCode: code, newPassword })

@@ -159,11 +159,10 @@ function completeStepUp(dispatch, getState) {
     });
 }
 
-// Drive the Amplify sign-in to the point where an MFA code is needed, then hand control back to the
-// UI.  SMS codes are only delivered once Cognito creates the challenge (after signIn, or after the
-// MFA type is selected), so we must NOT confirm here with a code captured before that challenge
-// existed; we render the code input and confirm on the next submit.  When no MFA challenge is raised
-// we complete step-up directly.
+// Drive the Amplify sign-in to the point where the authenticator code is needed, then hand control
+// back to the UI.  The password is checked first; only after Cognito accepts it and raises the
+// authenticator challenge does the UI ask for the code, and the next submit confirms it.  When no MFA
+// challenge is raised we complete step-up directly.
 function advanceReauthStep(output, dispatch, getState) {
   const step = output && output.nextStep && output.nextStep.signInStep;
   console.log("StepUpActions.advanceReauthStep(): signInStep:", step);
@@ -175,24 +174,13 @@ function advanceReauthStep(output, dispatch, getState) {
     dispatch({ type: STEP_UP_REAUTH_MFA_REQUIRED, payload: { mfaType: "SOFTWARE_TOKEN_MFA" } });
     return Promise.resolve(true);
   }
-  if (step === "CONFIRM_SIGN_IN_WITH_SMS_CODE") {
-    dispatch({ type: STEP_UP_REAUTH_MFA_REQUIRED, payload: { mfaType: "SMS_MFA" } });
-    return Promise.resolve(true);
-  }
-  if (step === "CONTINUE_SIGN_IN_WITH_MFA_SELECTION") {
-    // selecting SMS triggers the code delivery; recurse so the SMS/TOTP code challenge renders its input
-    const allowed = (output.nextStep && output.nextStep.allowedMFATypes) || [];
-    const choice = allowed.includes("TOTP") ? "TOTP" : "SMS";
-    return confirmSignIn({ challengeResponse: choice })
-      .then((next) => advanceReauthStep(next, dispatch, getState));
-  }
   throw new Error(`Unsupported re-authentication step: ${step}`);
 }
 
 // Step-up - re-authentication stage 1: the user re-enters their password.  Amplify v6 rejects a
 // sign-in while a session exists, so we sign out locally first; the new session's tokens then carry a
-// fresh auth_time.  signIn drives Cognito to the MFA challenge (and sends the SMS code when SMS is the
-// factor) without completing it; stepUpReauthConfirm supplies the code the user then receives.
+// fresh auth_time.  signIn drives Cognito to the authenticator challenge without completing it;
+// stepUpReauthConfirm (stage 2) supplies the code from the user's authenticator app.
 export function stepUpReauthStart(mock, password) {
   return function (dispatch, getState) {
     console.log("StepUpActions.stepUpReauthStart(): re-authenticating");
@@ -226,7 +214,7 @@ export function stepUpReauthStart(mock, password) {
   };
 }
 
-// Step-up - re-authentication stage 2: the user enters the MFA code Cognito just issued.  We confirm
+// Step-up - re-authentication stage 2: the user enters the current authenticator code.  We confirm
 // the pending Amplify sign-in flow (no new signOut/signIn, so the challenge the code belongs to is
 // still open), require it to complete, then present the fresh tokens to /respond-to-challenge.
 export function stepUpReauthConfirm(mock, mfaCode) {

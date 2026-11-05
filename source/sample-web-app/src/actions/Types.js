@@ -4,6 +4,7 @@
 // Actions related to authentication
 export const AUTH_USER = 'auth_user';
 export const AUTH_MFA = 'auth_mfa';
+export const AUTH_MFA_SETUP = 'auth_mfa_setup';
 export const AUTH_NEW_PASSWORD_REQUIRED = 'auth_new_password_required';
 export const UNAUTH_USER = 'unauth_user';
 export const REGISTER_USER = 'register_user';

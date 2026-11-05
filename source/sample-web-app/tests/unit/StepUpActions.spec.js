@@ -1,10 +1,9 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: MIT-0
 
-// Unit coverage for the two-stage step-up re-authentication flow. The flow must work for SMS MFA,
-// where the one-time code is delivered only after Cognito creates the challenge: stage 1 (password)
-// drives sign-in to the MFA challenge and renders the code input; stage 2 (code) confirms the pending
-// Amplify flow without a new signOut/signIn and then calls /respond-to-challenge.
+// Unit coverage for the two-stage step-up re-authentication flow: stage 1 (password) drives sign-in
+// to the authenticator (TOTP) challenge and renders the code input; stage 2 (code) confirms the
+// pending Amplify flow without a new signOut/signIn and then calls /respond-to-challenge.
 
 import {
   STEP_UP_ERROR,
@@ -71,25 +70,25 @@ beforeEach(() => {
   signOut.mockResolvedValue(undefined);
 });
 
-describe('step-up re-authentication - direct SMS MFA', () => {
-  it('stage 1 renders the code input without confirming a pre-challenge code', async () => {
-    signIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_SMS_CODE' } });
+describe('step-up re-authentication - TOTP MFA', () => {
+  it('stage 1 renders the authenticator code input without confirming a code', async () => {
+    signIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' } });
     const dispatch = jest.fn();
 
     await stepUpReauthStart(false, 'secret')(dispatch, getState);
 
     expect(signOut).toHaveBeenCalledTimes(1);
     expect(signIn).toHaveBeenCalledWith({ username: 'alice', password: 'secret' });
-    // the SMS code does not exist yet, so stage 1 must NOT call confirmSignIn
+    // the code is asked for only after Cognito raises the challenge, so stage 1 must NOT call confirmSignIn
     expect(confirmSignIn).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledWith({
       type: STEP_UP_REAUTH_MFA_REQUIRED,
-      payload: { mfaType: 'SMS_MFA' }
+      payload: { mfaType: 'SOFTWARE_TOKEN_MFA' }
     });
   });
 
-  it('stage 2 confirms the delivered code and completes step-up with the challengeId', async () => {
+  it('stage 2 confirms the authenticator code and completes step-up with the challengeId', async () => {
     confirmSignIn.mockResolvedValue({ nextStep: { signInStep: 'DONE' } });
     mockPostOnce('transfer stepped-up');
     const dispatch = jest.fn();
@@ -108,46 +107,9 @@ describe('step-up re-authentication - direct SMS MFA', () => {
   });
 });
 
-describe('step-up re-authentication - MFA selection resolving to SMS', () => {
-  it('selects the factor, then renders the code input without confirming a pre-challenge code', async () => {
-    signIn.mockResolvedValue({
-      nextStep: { signInStep: 'CONTINUE_SIGN_IN_WITH_MFA_SELECTION', allowedMFATypes: ['SMS'] }
-    });
-    // selecting SMS triggers code delivery and returns the SMS code challenge
-    confirmSignIn.mockResolvedValueOnce({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_SMS_CODE' } });
-    const dispatch = jest.fn();
-
-    await stepUpReauthStart(false, 'secret')(dispatch, getState);
-
-    // exactly one confirmSignIn: the factor selection, never a code value
-    expect(confirmSignIn).toHaveBeenCalledTimes(1);
-    expect(confirmSignIn).toHaveBeenCalledWith({ challengeResponse: 'SMS' });
-    expect(post).not.toHaveBeenCalled();
-    expect(dispatch).toHaveBeenCalledWith({
-      type: STEP_UP_REAUTH_MFA_REQUIRED,
-      payload: { mfaType: 'SMS_MFA' }
-    });
-  });
-});
-
-describe('step-up re-authentication - TOTP MFA', () => {
-  it('stage 1 renders the authenticator code input', async () => {
-    signIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' } });
-    const dispatch = jest.fn();
-
-    await stepUpReauthStart(false, 'secret')(dispatch, getState);
-
-    expect(confirmSignIn).not.toHaveBeenCalled();
-    expect(dispatch).toHaveBeenCalledWith({
-      type: STEP_UP_REAUTH_MFA_REQUIRED,
-      payload: { mfaType: 'SOFTWARE_TOKEN_MFA' }
-    });
-  });
-});
-
 describe('step-up re-authentication - failures fail closed', () => {
   it('stage 2 dispatches an error when the sign-in does not complete', async () => {
-    confirmSignIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_SMS_CODE' } });
+    confirmSignIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' } });
     const dispatch = jest.fn();
 
     await stepUpReauthConfirm(false, 'wrong')(dispatch, getState);
@@ -189,19 +151,19 @@ describe('step-up re-authentication - password retry survives a wrong password',
 
     // second attempt: signOut emptied the session, so the username must come from state
     fetchAuthSession.mockResolvedValueOnce({ tokens: undefined });
-    signIn.mockResolvedValueOnce({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_SMS_CODE' } });
+    signIn.mockResolvedValueOnce({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' } });
 
     await stepUpReauthStart(false, 'secret')(dispatch, getStateLocal);
 
     expect(signIn).toHaveBeenLastCalledWith({ username: 'alice', password: 'secret' });
     expect(dispatch).toHaveBeenCalledWith({
       type: STEP_UP_REAUTH_MFA_REQUIRED,
-      payload: { mfaType: 'SMS_MFA' }
+      payload: { mfaType: 'SOFTWARE_TOKEN_MFA' }
     });
   });
 
   it('never stores the password in any dispatched action', async () => {
-    signIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_SMS_CODE' } });
+    signIn.mockResolvedValue({ nextStep: { signInStep: 'CONFIRM_SIGN_IN_WITH_TOTP_CODE' } });
     const dispatch = jest.fn();
 
     await stepUpReauthStart(false, 'super-secret-password')(dispatch, getState);

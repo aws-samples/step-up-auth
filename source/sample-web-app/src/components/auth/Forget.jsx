@@ -29,7 +29,7 @@ class Forget extends Component {
       forgotPasswordCode,
       navigate} = this.props;
 
-    console.log('Forget.onFormSubmit() username, newPassword, code, forgotPasswordCode:', {username, newPassword, code, forgotPasswordCode});
+    console.log('Forget.onFormSubmit() username, forgotPasswordCode:', {username, forgotPasswordCode});
     // Need to do something to log user in
     if (typeof forgotPasswordCode == 'undefined' || forgotPasswordCode == false) {
       this.props.forgotPasswordAction({ username });

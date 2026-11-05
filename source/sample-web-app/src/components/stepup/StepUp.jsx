@@ -91,7 +91,7 @@ class StepUp extends Component {
       renderElements = (
         <Segment basic textAlign={"center"}>
           <Label as="span" color="orange">
-            Check MFA Setting
+            Step-up could not start
           </Label>
           <Label as="span" color="red">
             Error Message:
@@ -142,8 +142,7 @@ class StepUp extends Component {
     renderElements = (
       <Segment inverted color="red" textAlign={"center"}>
           {transferError}.
-          Wait at least 30 minutes before invoking API.
-          Or change Preferred MFA under Setting menu to Software Token.
+          Try again later.
       </Segment>
     );
 

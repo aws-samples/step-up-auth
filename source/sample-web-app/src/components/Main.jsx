@@ -9,7 +9,6 @@ import { Route, Outlet, Routes, Link, Navigate, useNavigate, useParams } from 'r
 import {  Sidebar, Menu, Segment } from 'semantic-ui-react';
 import { logout as logoutAction } from '../actions/AuthActions';
 import { Welcome as WelcomeScreen } from './welcome/Welcome';
-import { MFASetting } from './setting/MFASetting';
 import StepUp from './stepup/StepUp';
 
 import "./Main.css";
@@ -52,9 +51,6 @@ class Main extends Component {
             <Menu.Item name="home">
               <Link to="/main" className="menu-text">Home</Link>
             </Menu.Item>
-            <Menu.Item name="setting">
-              <Link to="setting" className="menu-text">Setting</Link>
-            </Menu.Item>
             <Menu.Item name="stepup">
               <Link to="stepup" className="menu-text">StepUp Auth</Link>
             </Menu.Item>
@@ -67,8 +63,6 @@ class Main extends Component {
               <Routes>
                 <Route index element={<WelcomeScreen />}></Route>
                 <Route element={<Outlet></Outlet>}>
-
-                  <Route path="setting" element={<MFASetting />} />
                   <Route path="stepup" element={<StepUp />} />
                 </Route>
 
