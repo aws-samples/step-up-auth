@@ -3,7 +3,10 @@
 
 import { describe, expect, it, beforeAll, beforeEach, afterEach, jest } from '@jest/globals';
 import { Context, APIGatewayProxyEvent } from 'aws-lambda';
-import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
+import {
+  CognitoIdentityProviderClient,
+  AdminGetUserCommand,
+  GetUserPoolMfaConfigCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoToken } from '@step-up-auth/auth-utils';
 import { SessionClient, StepUpStatusEnum, Session } from '@step-up-auth/auth-sdk';
 
@@ -70,13 +73,24 @@ describe('handler', () => {
   beforeAll(() => {
     process.env.COGNITO_USER_POOL_ARN = `arn:aws:cognito-idp:us-east-1:123456789012:userpool/${USER_POOL_ID}`;
     process.env.COGNITO_CLIENT_ID = CLIENT_ID;
+    process.env.USER_POOL_ID = USER_POOL_ID;
     CognitoToken.getVerifier(USER_POOL_ID, 'access', CLIENT_ID).cacheJwks({ keys: [testJwk] });
     CognitoToken.getVerifier(USER_POOL_ID, 'id', CLIENT_ID).cacheJwks({ keys: [testJwk] });
   });
 
   beforeEach(() => {
     sendMock = ((jest.spyOn(CognitoIdentityProviderClient.prototype, 'send') as unknown) as SendMock).mockClear();
-    sendMock.mockResolvedValue({ PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA', UserMFASettingList: ['SOFTWARE_TOKEN_MFA'] });
+    // route by command class: the pool requires authenticator-app MFA, and the token's user is live and
+    // enabled (enrolled at first sign-in, so its per-user MFA list is empty)
+    sendMock.mockImplementation(async (command: unknown) => {
+      if (command instanceof GetUserPoolMfaConfigCommand) {
+        return { MfaConfiguration: 'ON', SoftwareTokenMfaConfiguration: { Enabled: true } };
+      }
+      if (command instanceof AdminGetUserCommand) {
+        return { UserAttributes: [{ Name: 'sub', Value: 'sub-1' }], Enabled: true, UserMFASettingList: [] };
+      }
+      throw new Error('unexpected Cognito command');
+    });
     jest.spyOn(SessionClient.prototype, 'createSessionWithParams').mockResolvedValue('fresh-jti-1');
     jest.spyOn(SessionClient.prototype, 'getSession').mockResolvedValue(challengeRow());
     jest.spyOn(SessionClient.prototype, 'consumeSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
@@ -84,7 +98,12 @@ describe('handler', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
-    process.env = { ...originalEnv, COGNITO_USER_POOL_ARN: process.env.COGNITO_USER_POOL_ARN, COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID };
+    process.env = {
+      ...originalEnv,
+      COGNITO_USER_POOL_ARN: process.env.COGNITO_USER_POOL_ARN,
+      COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID,
+      USER_POOL_ID,
+    };
   });
 
   it('returns the correct OPTIONS response', async () => {

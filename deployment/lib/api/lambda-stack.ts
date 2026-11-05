@@ -101,10 +101,23 @@ export class LambdaStack extends cdk.Stack {
         // the challenge responder enforces the timing checks, so it reads both clock-skew allowances
         STEP_UP_CHALLENGE_CLOCK_SKEW: String(props.stepUpChallengeClockSkew),
         STEP_UP_REAUTH_FUTURE_SKEW: String(props.stepUpReauthFutureSkew),
+        // the challenge responder's MFA check (AdminGetUser and GetUserPoolMfaConfig) runs against this pool
+        USER_POOL_ID: props.cognitoUserPool.userPoolId,
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''
       }
     });
+    // the responder's MFA check reads the token's user and the pool's MFA configuration, on this pool only.
+    // A standalone policy in this stack (not the IAM stack) avoids a cross-stack reference cycle on the pool.
+    const stepUpChallengeCognitoPolicy = new iam.Policy(this, 'StepUpAuthChallengeCognitoPolicy', {
+      roles: [props.lambdaExecutionRole],
+      statements: [new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['cognito-idp:AdminGetUser', 'cognito-idp:GetUserPoolMfaConfig'],
+        resources: [props.cognitoUserPool.userPoolArn]
+      })]
+    });
+    this.stepUpChallengeFunc.node.addDependency(stepUpChallengeCognitoPolicy);
 
     // ----------------------------------------
     //      step-up-auth-sample-api lambda

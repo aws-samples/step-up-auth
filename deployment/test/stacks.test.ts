@@ -428,6 +428,51 @@ describe('IAM', () => {
 });
 
 // ----------------------------------------
+//   challenge responder MFA check (USER_POOL_ID and Cognito read access)
+// ----------------------------------------
+
+describe('challenge responder MFA check', () => {
+  let templates: Record<string, Template>;
+  beforeAll(() => { templates = synth(); });
+
+  it('sets USER_POOL_ID to the user pool id on the challenge lambda only', () => {
+    const lambdaTemplate = templates['StepUpAuthApi/Lambda'];
+    expect(JSON.stringify(functionEnv(lambdaTemplate, 'stepupauthchallengelambda').USER_POOL_ID))
+      .toMatch(/OutputRefStepUpAuthUserPool/);
+    expect(functionEnv(lambdaTemplate, 'stepupauthinitiatelambda').USER_POOL_ID).toBeUndefined();
+    expect(functionEnv(lambdaTemplate, 'stepupauthsampleapilambda').USER_POOL_ID).toBeUndefined();
+    expect(functionEnv(templates['StepUpAuthApi/APIG'], 'stepupauthauthorizerlambda').USER_POOL_ID).toBeUndefined();
+  });
+
+  it('grants only AdminGetUser and GetUserPoolMfaConfig, in one statement, on the user pool ARN', () => {
+    const cognitoStatements = allStatements(templates, ['AWS::IAM::Policy', 'AWS::IAM::Role'])
+      .filter((s) => asArray(s.Action).some((a) => String(a).startsWith('cognito-idp:')));
+    expect(cognitoStatements).toHaveLength(1);
+    const [statement] = cognitoStatements;
+    expect(statement.Effect).toBe('Allow');
+    expect(asArray(statement.Action).sort()).toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:GetUserPoolMfaConfig']);
+    const resources = asArray(statement.Resource);
+    expect(resources).toHaveLength(1);
+    expect(resources[0]).not.toBe('*');
+    expect(JSON.stringify(resources[0])).toMatch(/OutputFnGetAttStepUpAuthUserPool\w*Arn/);
+  });
+
+  it('attaches the grant to the Lambda execution role and creates the challenge lambda after it', () => {
+    const lambdaTemplate = templates['StepUpAuthApi/Lambda'];
+    const policies = Object.entries(lambdaTemplate.findResources('AWS::IAM::Policy'))
+      .filter(([logicalId]) => logicalId.startsWith('StepUpAuthChallengeCognitoPolicy'));
+    expect(policies).toHaveLength(1);
+    const [[policyLogicalId, policy]] = policies;
+    expect(JSON.stringify(policy.Properties.Roles)).toContain('StepUpAuthLambdaExecutionRole');
+    const challenge = Object.entries(lambdaTemplate.findResources('AWS::Lambda::Function'))
+      .filter(([logicalId]) => logicalId.startsWith('stepupauthchallengelambda'))
+      .map(([, resource]) => resource);
+    expect(challenge).toHaveLength(1);
+    expect(challenge[0].DependsOn).toContain(policyLogicalId);
+  });
+});
+
+// ----------------------------------------
 //   removal policies
 // ----------------------------------------
 

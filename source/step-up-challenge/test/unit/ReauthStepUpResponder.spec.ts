@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT-0
 
 import { describe, expect, it, beforeAll, beforeEach, afterEach, jest } from '@jest/globals';
-import { CognitoIdentityProviderClient, GetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+import {
+  CognitoIdentityProviderClient,
+  AdminGetUserCommand,
+  GetUserPoolMfaConfigCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoToken } from '@step-up-auth/auth-utils';
 import { SessionClient, StepUpStatusEnum, Session, RecordNotFoundException } from '@step-up-auth/auth-sdk';
 
@@ -39,6 +42,12 @@ const challengeRow = (overrides: Partial<Session> = {}): Session => {
   return Object.assign(s, overrides);
 };
 
+// GetUserPoolMfaConfig for a pool that requires MFA with the authenticator app only (no SMS or email factor)
+const POOL_MFA_REQUIRED = { MfaConfiguration: 'ON', SoftwareTokenMfaConfiguration: { Enabled: true } };
+// AdminGetUser for a live user who enrolled at first sign-in through MFA_SETUP: Cognito leaves the
+// per-user MFA list empty and sets no preferred MFA, although the pool enforces TOTP for this user
+const LIVE_USER = { UserAttributes: [{ Name: 'sub', Value: 'sub-1' }], Enabled: true, UserMFASettingList: [] };
+
 describe('ReauthStepUpResponder.validate()', () => {
   // Jest 30 types an untyped jest.Mock loosely; type send() to accept mockResolvedValue.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,9 +59,26 @@ describe('ReauthStepUpResponder.validate()', () => {
   let createSpy: ReturnType<typeof jest.spyOn>;
   const originalEnv = { ...process.env };
 
+  /**
+   * Route the Cognito send() mock by command class.  A value that is an Error is thrown for that command;
+   * any other command is unexpected and rejects.
+   */
+  const routeSend = (poolMfa: unknown = POOL_MFA_REQUIRED, user: unknown = LIVE_USER): void => {
+    sendMock.mockImplementation(async (command: unknown) => {
+      const value = command instanceof GetUserPoolMfaConfigCommand ? poolMfa
+        : command instanceof AdminGetUserCommand ? user
+          : new Error('unexpected Cognito command');
+      if (value instanceof Error) {
+        throw value;
+      }
+      return value;
+    });
+  };
+
   beforeAll(() => {
     process.env.COGNITO_USER_POOL_ARN = `arn:aws:cognito-idp:us-east-1:123456789012:userpool/${USER_POOL_ID}`;
     process.env.COGNITO_CLIENT_ID = CLIENT_ID;
+    process.env.USER_POOL_ID = USER_POOL_ID;
     // prime the JWKS cache for both token-use verifiers so verification runs offline
     CognitoToken.getVerifier(USER_POOL_ID, 'access', CLIENT_ID).cacheJwks({ keys: [testJwk] });
     CognitoToken.getVerifier(USER_POOL_ID, 'id', CLIENT_ID).cacheJwks({ keys: [testJwk] });
@@ -61,8 +87,8 @@ describe('ReauthStepUpResponder.validate()', () => {
   beforeEach(() => {
     sendMock = ((jest.spyOn(CognitoIdentityProviderClient.prototype, 'send') as unknown) as SendMock).mockClear();
     client = new CognitoIdentityProviderClient({ region: 'us-east-1' });
-    // default: user has MFA enabled
-    sendMock.mockResolvedValue({ PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA', UserMFASettingList: ['SOFTWARE_TOKEN_MFA'] });
+    // default: the pool requires authenticator-app MFA and the token's user is live and enabled
+    routeSend();
     createSpy = jest.spyOn(SessionClient.prototype, 'createSessionWithParams').mockResolvedValue('fresh-jti-1');
     getSessionSpy = jest.spyOn(SessionClient.prototype, 'getSession').mockResolvedValue(challengeRow());
     consumeSessionSpy = jest.spyOn(SessionClient.prototype, 'consumeSession').mockResolvedValue(`challenge#${CHALLENGE_ID}`);
@@ -70,7 +96,12 @@ describe('ReauthStepUpResponder.validate()', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
-    process.env = { ...originalEnv, COGNITO_USER_POOL_ARN: process.env.COGNITO_USER_POOL_ARN, COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID };
+    process.env = {
+      ...originalEnv,
+      COGNITO_USER_POOL_ARN: process.env.COGNITO_USER_POOL_ARN,
+      COGNITO_CLIENT_ID: process.env.COGNITO_CLIENT_ID,
+      USER_POOL_ID,
+    };
   });
 
   it('accepts a fresh, challenge-bound, MFA-backed re-authentication and consumes the challenge', async () => {
@@ -82,8 +113,13 @@ describe('ReauthStepUpResponder.validate()', () => {
     // the challenge was loaded and then atomically consumed so it cannot be replayed
     expect(getSessionSpy).toHaveBeenCalledWith(`challenge#${CHALLENGE_ID}`);
     expect(consumeSessionSpy).toHaveBeenCalledWith(`challenge#${CHALLENGE_ID}`);
-    // GetUser was called with the fresh access token
-    expect(sendMock.mock.calls[0][0]).toBeInstanceOf(GetUserCommand);
+    // the pool's MFA configuration and the token's user were read, for this pool and username only
+    const commands = sendMock.mock.calls.map(([command]) => command);
+    expect(commands).toHaveLength(2);
+    const poolCall = commands.find((c) => c instanceof GetUserPoolMfaConfigCommand) as GetUserPoolMfaConfigCommand;
+    const userCall = commands.find((c) => c instanceof AdminGetUserCommand) as AdminGetUserCommand;
+    expect(poolCall.input).toStrictEqual({ UserPoolId: USER_POOL_ID });
+    expect(userCall.input).toStrictEqual({ UserPoolId: USER_POOL_ID, Username: 'alice' });
     // a STEP_UP_COMPLETED session was written keyed by the fresh token's jti
     expect(createSpy).toHaveBeenCalledTimes(1);
     expect(createSpy.mock.calls[0][0]).toBe('fresh-jti-1');
@@ -161,16 +197,99 @@ describe('ReauthStepUpResponder.validate()', () => {
     expect(getSessionSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects when the user has no MFA factor enabled (MFA_NOT_ENROLLED)', async () => {
-    sendMock.mockResolvedValue({ PreferredMfaSetting: undefined, UserMFASettingList: [] });
-    const responder = new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID);
+  // ----------------------------------------
+  //   check 6: AdminGetUser user binding and the GetUserPoolMfaConfig required-MFA check
+  // ----------------------------------------
+  describe('MFA check', () => {
+    /** the challenge is only consumed on success, so a failed MFA check leaves it intact */
+    const expectNothingConsumed = (): void => {
+      expect(consumeSessionSpy).not.toHaveBeenCalled();
+      expect(createSpy).not.toHaveBeenCalled();
+    };
 
-    const result = await responder.validate();
+    it('accepts a user enrolled at first sign-in whose MFA list is empty when the pool requires TOTP', async () => {
+      routeSend(POOL_MFA_REQUIRED, { ...LIVE_USER, UserMFASettingList: [], PreferredMfaSetting: undefined });
 
-    expect(result).toEqual({ ok: false, reason: 'MFA_NOT_ENROLLED' });
-    // the challenge is only consumed on success, so a failed MFA check leaves it intact
-    expect(consumeSessionSpy).not.toHaveBeenCalled();
-    expect(createSpy).not.toHaveBeenCalled();
+      const result = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: true });
+      expect(createSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['an OPTIONAL pool, even when the user has a TOTP factor listed',
+        { MfaConfiguration: 'OPTIONAL', SoftwareTokenMfaConfiguration: { Enabled: true } },
+        { ...LIVE_USER, UserMFASettingList: ['SOFTWARE_TOKEN_MFA'], PreferredMfaSetting: 'SOFTWARE_TOKEN_MFA' }],
+      ['a pool with MFA OFF',
+        { MfaConfiguration: 'OFF' }, LIVE_USER],
+      ['a pool that requires MFA with the authenticator app disabled',
+        { MfaConfiguration: 'ON', SoftwareTokenMfaConfiguration: { Enabled: false } }, LIVE_USER],
+      ['a pool that requires MFA but also offers an SMS factor',
+        { ...POOL_MFA_REQUIRED, SmsMfaConfiguration: { SmsConfiguration: { SnsCallerArn: 'arn:aws:iam::123456789012:role/sms' } } },
+        LIVE_USER],
+      ['a pool that requires MFA but also offers an email factor',
+        { ...POOL_MFA_REQUIRED, EmailMfaConfiguration: { Message: '{####}', Subject: 'code' } }, LIVE_USER],
+    ])('rejects %s (MFA_NOT_ENROLLED)', async (_description, poolMfa, user) => {
+      routeSend(poolMfa, user);
+
+      const result = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: false, reason: 'MFA_NOT_ENROLLED' });
+      expectNothingConsumed();
+    });
+
+    it('rejects when USER_POOL_ID is unset, without calling Cognito (MFA_CHECK_FAILED)', async () => {
+      delete process.env.USER_POOL_ID;
+
+      const result = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: false, reason: 'MFA_CHECK_FAILED' });
+      expect(sendMock).not.toHaveBeenCalled();
+      expectNothingConsumed();
+    });
+
+    it('rejects when USER_POOL_ID names a different pool from COGNITO_USER_POOL_ARN (MFA_CHECK_FAILED)', async () => {
+      process.env.USER_POOL_ID = 'us-east-1_OTHERPOOL';
+
+      const result = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: false, reason: 'MFA_CHECK_FAILED' });
+      expect(sendMock).not.toHaveBeenCalled();
+      expectNothingConsumed();
+    });
+
+    it('rejects an access token with an empty username, without calling Cognito (MFA_CHECK_FAILED)', async () => {
+      const result = await new ReauthStepUpResponder(freshAccess({ username: '' }), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: false, reason: 'MFA_CHECK_FAILED' });
+      expect(sendMock).not.toHaveBeenCalled();
+      expectNothingConsumed();
+    });
+
+    it.each([
+      ['whose sub attribute differs from the token sub', { ...LIVE_USER, UserAttributes: [{ Name: 'sub', Value: 'sub-2' }] }],
+      ['with no sub attribute', { ...LIVE_USER, UserAttributes: [] }],
+      ['that is disabled', { ...LIVE_USER, Enabled: false }],
+    ])('rejects a user %s (MFA_CHECK_FAILED)', async (_description, user) => {
+      routeSend(POOL_MFA_REQUIRED, user);
+
+      const result = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: false, reason: 'MFA_CHECK_FAILED' });
+      expectNothingConsumed();
+    });
+
+    it.each([
+      ['GetUserPoolMfaConfig', () => routeSend(new Error('AccessDeniedException'), LIVE_USER)],
+      ['AdminGetUser', () => routeSend(POOL_MFA_REQUIRED, new Error('UserNotFoundException'))],
+    ])('rejects when %s throws (MFA_CHECK_FAILED)', async (_command, arrange) => {
+      arrange();
+
+      const result = await new ReauthStepUpResponder(freshAccess(), freshId(), client, CHALLENGE_ID).validate();
+
+      expect(result).toEqual({ ok: false, reason: 'MFA_CHECK_FAILED' });
+      expectNothingConsumed();
+    });
   });
 
   it('rejects a concurrent replay of the same challenge so only one completion wins (CHALLENGE_CONSUME_FAILED)', async () => {

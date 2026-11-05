@@ -11,7 +11,11 @@ import {
   readBoundedIntEnv } from '@step-up-auth/auth-utils';
 import {
   CognitoIdentityProviderClient,
-  GetUserCommand } from '@aws-sdk/client-cognito-identity-provider';
+  AdminGetUserCommand,
+  AdminGetUserCommandOutput,
+  GetUserPoolMfaConfigCommand,
+  GetUserPoolMfaConfigCommandOutput } from '@aws-sdk/client-cognito-identity-provider';
+import { configuredUserPoolId } from './config';
 
 // initialize Logger
 import * as path from 'path';
@@ -79,8 +83,18 @@ const MAX_SKEW_SECONDS = 10;
  *   4. the access token's `auth_time` is strictly after that challenge's creation time (small clock-skew
  *      allowance only) — a stolen or refreshed token authenticated before the challenge is rejected;
  *   5. the authentication is also recent (`auth_time` within the allowed window);
- *   6. the user has an MFA factor enabled, so the fresh sign-in necessarily completed MFA (the user pool
- *      does not remember devices, so MFA cannot be silently skipped).
+ *   6. the tokens belong to a live, enabled user of this pool (AdminGetUser: the user's `sub` attribute
+ *      equals the token's `sub`), and the pool requires MFA with the authenticator app (TOTP) as its only
+ *      factor (GetUserPoolMfaConfig: MfaConfiguration ON, software token enabled, no SMS or email factor).
+ * Why check 6 is enough for "only accept MFA set up before the challenge": MFA is required, the user
+ * sets up the authenticator at first sign-in, and the factor can't be changed or turned off afterwards
+ * (there is no self-service MFA, and the pre token generation trigger removes the
+ * aws.cognito.signin.user.admin scope from every token, so no browser token can register, replace or
+ * disable a factor).  The pool does not remember devices, so a re-authentication can't skip MFA.  The
+ * fresh sign-in therefore exercised the factor registered at first sign-in, which predates this
+ * challenge.  The guarantee is structural, not a timestamp check: Cognito exposes no factor-setup
+ * timestamp.  The per-user MFA list from AdminGetUser is not used, because it stays empty for a user who
+ * enrolled through the first sign-in MFA_SETUP challenge, even though the pool enforces TOTP for them.
  * On success it consumes the one-time challenge (so it cannot be replayed) and records a
  * STEP_UP_COMPLETED session keyed by the *fresh* access token's `jti`, so the stolen original token
  * never carries a completed session.
@@ -98,7 +112,8 @@ class ReauthStepUpResponder {
    * C-TOR
    * @param {string} accessToken fresh Cognito access token (from the re-authentication)
    * @param {string} idToken fresh Cognito id token (from the re-authentication)
-   * @param {CognitoIdentityProviderClient} client Cognito client used for the GetUser MFA check
+   * @param {CognitoIdentityProviderClient} client Cognito client, signed with the function's role, used for
+   *   the AdminGetUser user binding and the GetUserPoolMfaConfig required-MFA check (check 6)
    * @param {string} challengeId one-time challenge id returned by `/initiate-auth` (required)
    */
   constructor(accessToken: string, idToken: string, client: CognitoIdentityProviderClient, challengeId?: string) {
@@ -205,18 +220,40 @@ class ReauthStepUpResponder {
       return { ok: false, reason: 'STALE_AUTH' };
     }
 
-    // 6. (MFA assurance) the user must have an MFA factor enabled, so the fresh sign-in necessarily
-    //    exercised it.  GetUser is authorised by the fresh access token.
-    let mfaEnabled = false;
-    try {
-      const user = await this.client.send(new GetUserCommand({ AccessToken: access.getToken() }));
-      mfaEnabled = !!user.PreferredMfaSetting || (user.UserMFASettingList !== undefined && user.UserMFASettingList.length > 0);
-    } catch ( e: any ) {
-      log.error(`step-up rejected: GetUser failed - ${e?.name}: ${e?.message}`);
+    // 6. (MFA assurance) bind the tokens to a live, enabled user of this pool, and require that the pool
+    //    enforces MFA with the authenticator app as its only factor.  MFA is required, set up at first
+    //    sign-in and immutable afterwards (no self-service MFA, and no token carries the
+    //    aws.cognito.signin.user.admin scope), so the factor this fresh sign-in exercised predates the
+    //    challenge.  Cognito exposes no factor-setup timestamp, so this is guaranteed structurally rather
+    //    than by a timestamp check.  The per-user MFA list is not used: it stays empty for a user who
+    //    enrolled through the first sign-in MFA_SETUP challenge.  Both calls are authorised by the
+    //    function's IAM role, not by the presented token.
+    const userPoolId = configuredUserPoolId();
+    const username = access.getUsernameClaim();
+    if (!userPoolId || !username) {
+      log.warn('step-up rejected: the user pool id or the token username is not available for the MFA check');
       return { ok: false, reason: 'MFA_CHECK_FAILED' };
     }
-    if (!mfaEnabled) {
-      log.warn('step-up rejected: user has no MFA factor enabled');
+    let poolMfa: GetUserPoolMfaConfigCommandOutput;
+    let user: AdminGetUserCommandOutput;
+    try {
+      poolMfa = await this.client.send(new GetUserPoolMfaConfigCommand({ UserPoolId: userPoolId }));
+      user = await this.client.send(new AdminGetUserCommand({ UserPoolId: userPoolId, Username: username }));
+    } catch ( e: any ) {
+      log.error(`step-up rejected: the MFA check call to Cognito failed - ${e?.name}: ${e?.message}`);
+      return { ok: false, reason: 'MFA_CHECK_FAILED' };
+    }
+    const userSub = user.UserAttributes?.find((attribute) => attribute.Name === 'sub')?.Value;
+    if (userSub !== sub || user.Enabled === false) {
+      log.warn('step-up rejected: the token does not belong to a live, enabled user of this pool');
+      return { ok: false, reason: 'MFA_CHECK_FAILED' };
+    }
+    const mfaRequired = poolMfa.MfaConfiguration === 'ON'
+      && poolMfa.SoftwareTokenMfaConfiguration?.Enabled === true
+      && !poolMfa.SmsMfaConfiguration
+      && !poolMfa.EmailMfaConfiguration;
+    if (!mfaRequired) {
+      log.warn('step-up rejected: the user pool does not require MFA with the authenticator app as its only factor');
       return { ok: false, reason: 'MFA_NOT_ENROLLED' };
     }
 
