@@ -12,7 +12,6 @@ export class IamStack extends cdk.Stack {
   public readonly apigatewayLambdaAuthorizerRole: iam.Role;
   public readonly apigatewayExecutionRole: iam.Role;
   public readonly lambdaExecutionRole: iam.Role;
-  public readonly smsRole: iam.Role;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
   constructor(scope: Construct, id: string, props: IamProps) {
@@ -59,17 +58,5 @@ export class IamStack extends cdk.Stack {
     this.lambdaExecutionRole.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonCognitoPowerUser')
     );
-
-    // ----------------------------------------
-    //          cognito sms role
-    // ----------------------------------------
-    const smsRole = new iam.Role(this, 'StepUpAuthUserPoolSmsRole', {
-      assumedBy: new iam.ServicePrincipal('cognito-idp.amazonaws.com'),
-    });
-    smsRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      resources: ['*'],
-      actions: ['sns:publish']
-    }));
   }
 }

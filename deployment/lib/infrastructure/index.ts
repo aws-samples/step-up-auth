@@ -40,8 +40,7 @@ export class Infrastructure extends Construct {
 
     // create Cognito Stack
     const cognitoStack = new CognitoStack(this, "Cognito", {
-      env: props.env,
-      smsRole: iamStack.smsRole
+      env: props.env
     });
     this.cognitoUserPool = cognitoStack.userPool;
     this.cognitoUserPoolClient = cognitoStack.appClient;

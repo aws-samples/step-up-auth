@@ -290,6 +290,54 @@ describe('cognito app client hardening', () => {
 });
 
 // ----------------------------------------
+//   required authenticator-app MFA, and no SMS
+// ----------------------------------------
+
+describe('cognito user pool MFA', () => {
+  let templates: Record<string, Template>;
+  let pool: ReturnType<Template['findResources']>[string];
+  beforeAll(() => {
+    templates = synth();
+    [pool] = Object.values(templates['StepUpAuthInfra/Cognito'].findResources('AWS::Cognito::UserPool'));
+  });
+
+  it('requires MFA with the authenticator app (TOTP) as the only factor', () => {
+    expect(pool.Properties.MfaConfiguration).toBe('ON');
+    expect(pool.Properties.EnabledMfas).toStrictEqual(['SOFTWARE_TOKEN_MFA']);
+  });
+
+  it('configures no SMS sending on the pool', () => {
+    expect(pool.Properties.SmsConfiguration).toBeUndefined();
+  });
+
+  it('creates no IAM role that Cognito can assume, in any stack', () => {
+    for (const template of Object.values(templates)) {
+      for (const role of Object.values(template.findResources('AWS::IAM::Role'))) {
+        expect(JSON.stringify(role.Properties.AssumeRolePolicyDocument)).not.toContain('cognito-idp.amazonaws.com');
+      }
+    }
+  });
+
+  it('grants no sns: action in any policy', () => {
+    const snsStatements = allStatements(templates, ['AWS::IAM::Policy', 'AWS::IAM::Role', 'AWS::IAM::ManagedPolicy'])
+      .filter((s) => asArray(s.Action).some((a) => String(a).toLowerCase().startsWith('sns:')));
+    expect(snsStatements).toStrictEqual([]);
+  });
+
+  it('keeps email and phone_number as required attributes', () => {
+    expect(pool.Properties.Schema).toEqual(expect.arrayContaining([
+      expect.objectContaining({ Name: 'email', Required: true }),
+      expect.objectContaining({ Name: 'phone_number', Required: true }),
+    ]));
+  });
+
+  it('keeps the Essentials plan and does not remember devices', () => {
+    expect(pool.Properties.UserPoolTier).toBe('ESSENTIALS');
+    expect(pool.Properties.DeviceConfiguration).toBeUndefined();
+  });
+});
+
+// ----------------------------------------
 //   pre token generation trigger (aws.cognito.signin.user.admin suppression)
 // ----------------------------------------
 

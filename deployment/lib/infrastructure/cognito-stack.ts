@@ -11,9 +11,8 @@ import { Construct } from 'constructs';
 
 import { PRE_TOKEN_GENERATION_HANDLER } from './pre-token-generation';
 
-export interface CognitoProps extends cdk.StackProps {
-  readonly smsRole: iam.Role;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface CognitoProps extends cdk.StackProps {}
 
 export class CognitoStack extends cdk.Stack {
   public readonly userPool: cognito.UserPool;
@@ -32,16 +31,22 @@ export class CognitoStack extends cdk.Stack {
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
       accountRecovery: cognito.AccountRecovery.NONE,
       selfSignUpEnabled: true,
-      mfa: cognito.Mfa.OPTIONAL,
+      // MFA is required, with the authenticator app (TOTP) as the only factor.  Cognito makes every user
+      // set up the authenticator at first sign-in (the MFA_SETUP challenge) before it issues any token, and
+      // MFA can't be turned off afterwards.  The trigger below removes the aws.cognito.signin.user.admin
+      // scope, so no token can register, replace or disable a factor, and the factor set up at first
+      // sign-in is the only one that ever exists.  There is no SMS factor, so no SMS role is configured.
+      // The step-up challenge responder refuses step-up unless the pool still has exactly this setup.
+      mfa: cognito.Mfa.REQUIRED,
       mfaSecondFactor: {
-        sms: true,
+        sms: false,
         otp: true
       },
+      // email and phone_number stay required attributes; the phone number is not an MFA factor
       standardAttributes: {
         email: {required: true},
         phoneNumber: {required: true}
       },
-      smsRole: props.smsRole,
       signInAliases: {
         username: true,
         email: false
