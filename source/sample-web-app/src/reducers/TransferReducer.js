@@ -12,10 +12,12 @@ import {
 export default function (state = {}, action) {
   switch (action.type) {
     case TRANSFER_ERROR: {
+      // drop the data of an earlier successful call so it is not shown next to the error
       const returnProps = {
         ...state,
         transferError: action.payload.message,
-        transferCode: action.payload.code
+        transferCode: action.payload.code,
+        transferData: null
       };
 
       console.log("TransferReducer. action: ", action);
@@ -47,10 +49,12 @@ export default function (state = {}, action) {
       return returnProps;
     }
     case INFO_ERROR: {
+      // drop the data of an earlier successful call so it is not shown next to the error
       const returnProps = {
         ...state,
         infoError: action.payload.message,
-        infoCode: action.payload.code
+        infoCode: action.payload.code,
+        infoData: null
       };
 
       console.log("TransferReducer. action: ", action);

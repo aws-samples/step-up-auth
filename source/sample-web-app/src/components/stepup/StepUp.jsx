@@ -100,6 +100,19 @@ class StepUp extends Component {
         </Segment>
       );
     }
+    else if (steppedUp) {
+      // step-up is complete: show only the next action.  The re-authentication form is not shown,
+      // because signing in again would replace the elevated token and reuse the challenge that has
+      // already been used.
+      renderElements = (
+        <Segment basic textAlign={"center"}>
+          <Label as="span" color="green">
+            Step-up Status:
+            <Label.Detail>Complete! Invoke API again.</Label.Detail>
+          </Label>
+        </Segment>
+      );
+    }
     else {
       renderElements = (
         <Segment basic textAlign={"center"}>
@@ -119,12 +132,6 @@ class StepUp extends Component {
                 <Label.Detail>{stepUpError}</Label.Detail>
               </Label>
             </Container>
-          )}
-          { steppedUp && (
-            <Label as="span" color="green">
-              Step-up Status:
-              <Label.Detail>Complete! Invoke API again.</Label.Detail>
-            </Label>
           )}
         </Segment>
       );
@@ -273,5 +280,8 @@ function mapDispatchToProps(dispatch) {
     dispatch
   };
 }
+
+// the unconnected component, for unit tests
+export { StepUp };
 
 export default connect(mapStateToProps, mapDispatchToProps)(StepUp);
