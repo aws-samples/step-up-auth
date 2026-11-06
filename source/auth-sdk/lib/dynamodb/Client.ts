@@ -24,7 +24,6 @@ class Client {
   protected environmentPrefix?: string;
   protected sessionIdExpirationTimeoutInSeconds: number = 900; // 15 minutes
   protected sessionTableItemTTLInSeconds: number = DEFAULT_SESSION_TABLE_ITEM_TTL_SECONDS;
-  protected tokenTableItemTTLInSeconds: number = 86400; // 24 hours
 
   constructor() {
     if (process.env.AWS_REGION !== undefined) {
@@ -47,10 +46,6 @@ class Client {
       MIN_SESSION_TABLE_ITEM_TTL_SECONDS,
       MAX_SESSION_TABLE_ITEM_TTL_SECONDS,
     );
-
-    if (process.env.TOKEN_TABLE_ITEM_TTL !== undefined && typeof process.env.TOKEN_TABLE_ITEM_TTL === 'string' && process.env.TOKEN_TABLE_ITEM_TTL.length > 0) {
-      this.tokenTableItemTTLInSeconds = +process.env.TOKEN_TABLE_ITEM_TTL;
-    }
 
     // instantiate the client
     this.client = new DynamoDBClient({ region: this.awsRegion });

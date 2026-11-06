@@ -18,7 +18,7 @@ import {
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { Logger } from '@step-up-auth/auth-utils';
 import { Client } from './Client';
-import { Session } from './model/Session';
+import { Session, DEFAULT_SESSION_LIFETIME_SECONDS } from './model/Session';
 import { StepUpStatusEnum } from './model/types';
 import { CreateException } from './exception/CreateException';
 import { RecordNotFoundException } from './exception/RecordNotFoundException';
@@ -46,12 +46,28 @@ class SessionClient extends Client {
   }
 
   /**
-   * Create session in DynamoDB table
+   * Create session in DynamoDB table.  The row must have a session id and a ttl that is in the future
+   * and at most 15 minutes away (the ceiling of both SESSION_TABLE_ITEM_TTL and STEP_UP_CHALLENGE_TTL),
+   * so no caller can write a long-lived step-up session.
    * @param {Session} session Session object
    * @returns {string} session id
-   * @throws {CreateException} If DynamoDB operation fails, throw 'Error'
+   * @throws {CreateException} If the session id or ttl is invalid, or the DynamoDB operation fails
    */
    public async createSession(session: Session): Promise<string> {
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    if (!session || !session.sessionId) {
+      const errorMessage = 'refusing to write a session without a session id';
+      log.error(errorMessage);
+      throw new CreateException(errorMessage);
+    }
+    // 1 second allowance: callers round the current time, this check floors it
+    if (!Number.isFinite(session.ttl) || session.ttl <= nowInSeconds ||
+        session.ttl > nowInSeconds + DEFAULT_SESSION_LIFETIME_SECONDS + 1) {
+      const errorMessage = `refusing to write session ${session.sessionId} with ttl ${session.ttl}: ` +
+        `it must be in the future and at most ${DEFAULT_SESSION_LIFETIME_SECONDS} seconds away`;
+      log.error(errorMessage);
+      throw new CreateException(errorMessage);
+    }
 
     const marshallOptions = {
       // Whether to automatically convert empty strings, blobs, and sets to `null`.

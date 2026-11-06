@@ -4,25 +4,28 @@
 import * as crypto from "crypto";
 import { StepUpStatusEnum } from './types';
 
+/** Random bytes in a generated session id: 16 bytes (128 bits), rendered as 32 hex characters */
+const SESSION_ID_BYTES = 16;
+
 /**
- * Generate random session Id.  Id is generated from a random byte array.
- * The hex representation of one byte is used for two characters in request id.
- * For example, <Buffer 8c aa 16 73 4a be 85 be> generates a request id
- * 8caa16734abe85be.
- * @param {number} bytesInId number of random bytes to use to generate request id.  If size is 0 or not a number then length defaults to 8 bytes.
+ * Default lifetime (seconds) of a new Session object: the default and the ceiling of
+ * SESSION_TABLE_ITEM_TTL.  SessionClient replaces it with the capped ttl before it writes a row, and
+ * refuses to write a row whose ttl is further in the future than this.
  */
-const generateSessionId = (bytesInId = 8) => {
-  let numberOfBytesInId = bytesInId;
-  const defaultNumberOfBytesInId = 8;
-  if (typeof bytesInId !== 'number') {
-    numberOfBytesInId = defaultNumberOfBytesInId;
+const DEFAULT_SESSION_LIFETIME_SECONDS = 900;
+
+/**
+ * Generate a random session id from a cryptographically secure random source.
+ * For example, 16 random bytes <Buffer 8c aa 16 73 ...> give the id 8caa1673....
+ * @param {number} bytesInId number of random bytes; at least 16 (128 bits)
+ * @returns {string} hex id, twice as many characters as bytes
+ * @throws {RangeError} if bytesInId is not a whole number of at least 16
+ */
+const generateSessionId = (bytesInId: number = SESSION_ID_BYTES): string => {
+  if (!Number.isInteger(bytesInId) || bytesInId < SESSION_ID_BYTES) {
+    throw new RangeError(`a session id needs at least ${SESSION_ID_BYTES} random bytes`);
   }
-  if (bytesInId <= 0) {
-    numberOfBytesInId = defaultNumberOfBytesInId;
-  }
-  numberOfBytesInId = bytesInId;
-  const b = crypto.randomBytes(numberOfBytesInId);
-  return b.toString('hex');
+  return crypto.randomBytes(bytesInId).toString('hex');
 };
 
 /**
@@ -53,12 +56,9 @@ class Session {
     this.stepUpStatus = stepUpStatus || StepUpStatusEnum.STEP_UP_NOT_REQUIRED;
     this.createTimestamp = "";
     this.lastUpdateTimestamp = "";
-    // set default ttl value to 365 days from current epoch time
-    const secondsInYear = 31104000; // 12 * 30 * 24 * 60 * 60;
-    const now = new Date();
-    this.ttl = Math.round(now.getTime() / 1000) + secondsInYear;
+    // default ttl: 15 minutes from now, the longest lifetime a session row may have
+    this.ttl = Math.floor(Date.now() / 1000) + DEFAULT_SESSION_LIFETIME_SECONDS;
   }
 }
 
-export { Session };
-
+export { Session, generateSessionId, DEFAULT_SESSION_LIFETIME_SECONDS };

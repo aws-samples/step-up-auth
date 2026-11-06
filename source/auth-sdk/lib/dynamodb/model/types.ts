@@ -14,14 +14,4 @@ export enum StepUpStateEnum {
   STEP_UP_NOT_REQUIRED = "STEP_UP_NOT_REQUIRED",
   STEP_UP_DENY = "STEP_UP_DENY",
 }
-
-export enum TokenStatusEnum {
-  SENT = "SENT",
-  ERROR = "ERROR"
-}
-
-export enum TokenChannelTypeEnum {
-  SMS = "SMS",
-  EMAIL = "EMAIL"
-}
 /* eslint-enable no-unused-vars */

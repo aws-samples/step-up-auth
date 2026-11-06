@@ -10,7 +10,7 @@ Complete steps below to setup local development environment.  VSCode IDE is reco
 - run `npm link @step-up-auth/auth-utils` to use the local auth-utils module.  `npm ci` removes npm links, so run this step again after every `npm ci`
 - run `npm run test` to execute unit tests.  The unit tests don't call AWS, so they don't need AWS credentials or `AWS_PROFILE`.
 - run `npm run test-e2e` to execute end-to-end integration tests.  These tests require access to DynamoDB tables therefore these tests shouldn't execute in CICD pipeline.  Run these tests in local development mode, for now.
-  - ensure that AWS credentials are available, for example by setting the AWS_PROFILE environment variable.  The tests use the deployed tables `step-up-auth-session-<ENV_PREFIX>`, `step-up-auth-setting-<ENV_PREFIX>` and `step-up-auth-token-<ENV_PREFIX>` (without the `-<ENV_PREFIX>` suffix when `ENV_PREFIX` is not set) in `AWS_REGION` (default `us-east-1`).
+  - ensure that AWS credentials are available, for example by setting the AWS_PROFILE environment variable.  The tests use the deployed tables `step-up-auth-session-<ENV_PREFIX>` and `step-up-auth-setting-<ENV_PREFIX>` (without the `-<ENV_PREFIX>` suffix when `ENV_PREFIX` is not set) in `AWS_REGION` (default `us-east-1`).
 
 ## DynamoDB Table Setup
 
@@ -37,7 +37,7 @@ Table structure is outlined in `lib/dynamodb/model/Session.ts`.  The CDK deploym
       BillingMode: PAY_PER_REQUEST
 ```
 
-DynamoDB TTL on `ttl` only deletes old items, and deletion is not immediate, so every consumer still checks `ttl` itself.  `SessionClient` writes two kinds of rows with different ttl rules:
+DynamoDB TTL on `ttl` only deletes old items, and deletion is not immediate, so every consumer still checks `ttl` itself.  A generated session id is 128 bits from Node.js `crypto.randomBytes`.  `SessionClient.createSession` refuses to write a row without a session id, or whose `ttl` is not in the future or is more than 15 minutes away (the ceiling of both `SESSION_TABLE_ITEM_TTL` and `STEP_UP_CHALLENGE_TTL`).  `SessionClient` writes two kinds of rows with different ttl rules:
 
 - Access-token session rows (`STEP_UP_REQUIRED` / `STEP_UP_COMPLETED`, keyed by the access token's `jti`).  `createSessionWithParams` sets `ttl` to `min(now + SESSION_TABLE_ITEM_TTL, access token exp)` so a session never outlives its access token, and the authorizer rejects a session whose `ttl` has passed.
 - One-time challenge rows (`challenge#<challengeId>`).  `createChallengeSession` sets `ttl` to `creation time + STEP_UP_CHALLENGE_TTL` from a single clock read and deliberately bypasses the `min(..., access token exp)` calculation, so `SESSION_TABLE_ITEM_TTL` never shortens a challenge.  Challenge expiry is enforced by the respond-to-challenge Lambda, which treats a challenge whose `ttl` has passed as absent, not by the authorizer.
@@ -63,29 +63,6 @@ Table structure is outlined in `lib/dynamodb/model/Setting.ts`.  Following Cloud
         -
           AttributeName: "id"
           KeyType: "HASH"
-      BillingMode: PAY_PER_REQUEST
-```
-
-### Token Table Structure
-
-Table structure is outlined in `lib/dynamodb/model/Token.ts`.  Following CloudFormation template highlights `token` table definition:
-
-```yaml
-  TokenDynamoDBTable:
-    Type: "AWS::DynamoDB::Table"
-    Properties:
-      TableName: !Sub step-up-auth-token-${ENVNAME}
-      AttributeDefinitions:
-        -
-          AttributeName: "id"
-          AttributeType: "S"
-      KeySchema:
-        -
-          AttributeName: "id"
-          KeyType: "HASH"
-      TimeToLiveSpecification:
-        AttributeName: "ttl"
-        Enabled: true
       BillingMode: PAY_PER_REQUEST
 ```
 

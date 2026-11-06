@@ -51,8 +51,6 @@
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1161.0",
-    "@aws-sdk/client-ses": "^3.1161.0",
-    "@aws-sdk/client-sns": "^3.1161.0",
     "@aws-sdk/util-dynamodb": "^3.996.9"
   },
   "engines": {
