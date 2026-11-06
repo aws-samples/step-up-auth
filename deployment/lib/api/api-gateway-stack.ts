@@ -111,9 +111,11 @@ export class ApiGatewayStack extends cdk.Stack {
     // ----------------------------------------
     //      step-up-auth api
     // ----------------------------------------
-    // Regional endpoint with the TLS_1_2 security policy (TLS 1.2 and 1.3 only; a new regional REST API
-    // otherwise gets TLS_1_0).  The RestApi construct doesn't expose the property, so it is set on the
-    // CloudFormation resource below.
+    // Regional endpoint with the SecurityPolicy_TLS13_1_2_2021_06 security policy (TLS 1.2 and 1.3 only;
+    // a new regional REST API otherwise gets TLS_1_0, and API Gateway rejects the legacy TLS_1_2 policy
+    // on a regional REST API).  An enhanced (SecurityPolicy_*) policy needs an endpoint access mode;
+    // BASIC keeps API Gateway's standard request handling.  The RestApi construct doesn't expose these
+    // properties, so they are set on the CloudFormation resource below.
     // cloudWatchRole stays false (cdk.json disables it by default): the stage's CloudWatch logging uses
     // the account's existing API Gateway CloudWatch Logs role, which is one setting per account and
     // region, so the sample doesn't create or replace it (deploy.sh checks that it is set).
@@ -126,7 +128,9 @@ export class ApiGatewayStack extends cdk.Stack {
       cloudWatchRole: false,
       deploy: false
     });
-    (this.api.node.defaultChild as apigateway.CfnRestApi).securityPolicy = 'TLS_1_2';
+    const cfnApi = this.api.node.defaultChild as apigateway.CfnRestApi;
+    cfnApi.securityPolicy = 'SecurityPolicy_TLS13_1_2_2021_06';
+    cfnApi.endpointAccessMode = 'BASIC';
 
     // request validation on every method (the CORS preflights aside):
     // - GET /info, POST /initiate-auth and POST /transfer take no body or parameters; they require the

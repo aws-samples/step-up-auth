@@ -712,10 +712,11 @@ describe('API Gateway', () => {
   let template: Template;
   beforeAll(() => { template = synth()['StepUpAuthApi/APIG']; });
 
-  it('uses a regional endpoint with the TLS_1_2 security policy', () => {
+  it('uses a regional endpoint with a TLS 1.2 minimum security policy', () => {
     const [api] = Object.values(template.findResources('AWS::ApiGateway::RestApi'));
     expect(api.Properties.EndpointConfiguration).toStrictEqual({ Types: ['REGIONAL'] });
-    expect(api.Properties.SecurityPolicy).toBe('TLS_1_2');
+    expect(api.Properties.SecurityPolicy).toBe('SecurityPolicy_TLS13_1_2_2021_06');
+    expect(api.Properties.EndpointAccessMode).toBe('BASIC');
   });
 
   it('writes stage access logs as JSON to a log group with a retention', () => {
