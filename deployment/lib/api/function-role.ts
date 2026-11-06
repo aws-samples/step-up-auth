@@ -33,6 +33,12 @@ export function createFunctionRole(scope: Construct, id: string): FunctionRole {
   const role = new iam.Role(scope, `${id}-role`, {
     assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
   });
+  // Wildcard rationale: logGroup.logGroupArn resolves to
+  // arn:<partition>:logs:<region>:<account>:log-group:<name>:*.  The trailing :* covers the log streams
+  // of this one log group (a log stream's ARN is the log group's ARN followed by :log-stream:<name>).
+  // Lambda creates those streams with generated names, one for each execution environment, so they
+  // can't be listed in advance.
+  // https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/iam-access-control-overview-cwl.html
   role.addToPolicy(new iam.PolicyStatement({
     effect: iam.Effect.ALLOW,
     actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],

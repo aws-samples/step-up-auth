@@ -81,6 +81,12 @@ export class CognitoStack extends cdk.Stack {
     const preTokenGenerationRole = new iam.Role(this, 'PreTokenGenerationRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com')
     });
+    // Wildcard rationale: preTokenGenerationLogGroup.logGroupArn resolves to
+    // arn:<partition>:logs:<region>:<account>:log-group:<name>:*.  The trailing :* covers the log streams
+    // of this one log group (a log stream's ARN is the log group's ARN followed by :log-stream:<name>).
+    // Lambda creates those streams with generated names, one for each execution environment, so they
+    // can't be listed in advance.
+    // https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/iam-access-control-overview-cwl.html
     preTokenGenerationRole.addToPolicy(new iam.PolicyStatement({
       effect: iam.Effect.ALLOW,
       actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],

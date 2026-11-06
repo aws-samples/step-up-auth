@@ -42,6 +42,15 @@ export class CloudfrontStack extends cdk.Stack {
       }],
       // sample resources: `cdk destroy` empties and removes the bucket
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      // Wildcard rationale: autoDeleteObjects makes CDK add a statement to this bucket's policy that
+      // lets CDK's auto-delete function use s3:GetBucket*, s3:List*, s3:DeleteObject* and
+      // s3:PutBucketPolicy on this bucket and on its objects (<bucket>/*).  When the stack is deleted,
+      // the function reads the bucket's tags and policy (GetBucketTagging, GetBucketPolicy), denies new
+      // uploads (PutBucketPolicy), lists every object version (ListBucketVersions) and deletes each one
+      // (DeleteObject, DeleteObjectVersion).  The object keys aren't known when the stack is
+      // synthesized, so the resource is <bucket>/*; CDK's Bucket construct sets the action families,
+      // and the statement names this bucket only.
+      // https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_s3.BucketProps.html#autodeleteobjects
       autoDeleteObjects: true
     });
 
@@ -55,6 +64,12 @@ export class CloudfrontStack extends cdk.Stack {
       enforceSSL: true,
       encryption: s3.BucketEncryption.S3_MANAGED,
       objectOwnership: s3.ObjectOwnership.BUCKET_OWNER_ENFORCED,
+      // Wildcard rationale: server access logging makes CDK add a statement to the access-log bucket's
+      // policy that lets the S3 logging service (logging.s3.amazonaws.com) call s3:PutObject on
+      // <access-log bucket>/web-bucket/*, only for the logs of this bucket (aws:SourceArn) in this
+      // account (aws:SourceAccount).  S3 names each log object when it delivers it (the prefix, the
+      // date and time, and a unique string), so the resource is the prefix with a wildcard.
+      // https://docs.aws.amazon.com/AmazonS3/latest/userguide/enable-server-access-logging.html
       serverAccessLogsBucket: this.accessLogBucket,
       serverAccessLogsPrefix: 'web-bucket/',
       lifecycleRules: [{
@@ -62,6 +77,15 @@ export class CloudfrontStack extends cdk.Stack {
       }],
       // sample resources: `cdk destroy` empties and removes the bucket
       removalPolicy: cdk.RemovalPolicy.DESTROY,
+      // Wildcard rationale: autoDeleteObjects makes CDK add a statement to this bucket's policy that
+      // lets CDK's auto-delete function use s3:GetBucket*, s3:List*, s3:DeleteObject* and
+      // s3:PutBucketPolicy on this bucket and on its objects (<bucket>/*).  When the stack is deleted,
+      // the function reads the bucket's tags and policy (GetBucketTagging, GetBucketPolicy), denies new
+      // uploads (PutBucketPolicy), lists every object version (ListBucketVersions) and deletes each one
+      // (DeleteObject, DeleteObjectVersion).  The object keys aren't known when the stack is
+      // synthesized, so the resource is <bucket>/*; CDK's Bucket construct sets the action families,
+      // and the statement names this bucket only.
+      // https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_s3.BucketProps.html#autodeleteobjects
       autoDeleteObjects: true
     });
 
@@ -96,7 +120,13 @@ export class CloudfrontStack extends cdk.Stack {
     // without one); see "Security model and limitations" in the README.
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
-        // origin access control: the bucket policy lets only this distribution read the bucket
+        // origin access control: the bucket policy lets only this distribution read the bucket.
+        // Wildcard rationale: CDK adds a statement to the web bucket's policy that lets
+        // cloudfront.amazonaws.com call s3:GetObject on <web bucket>/*, only for requests from this
+        // distribution (AWS:SourceArn).  The distribution serves every file of the web app build
+        // (index.html, the JavaScript bundles, the style sheets and the images, whose names and number
+        // the webpack build decides), so the resource is the bucket's objects, not a list of keys.
+        // https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         responseHeadersPolicy: securityHeaders
