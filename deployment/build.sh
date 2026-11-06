@@ -69,6 +69,19 @@ buildAll() {
   # web-ui
   echo ">> preparing web-ui"
   ( cd ../source/sample-web-app && npm ci ) > /tmp/$$.web-ui.setup.log 2> /tmp/$$.web-ui.setup.log || exit 3
+  # software bills of materials of the deployed code
+  sbom step-up-authorizer
+  sbom step-up-challenge
+  sbom step-up-initiate
+  sbom sample-api
+  sbom sample-web-app
+}
+# write a CycloneDX software bill of materials of one project's production dependencies (from its
+# package-lock.json) to ../source/<project>/build/sbom/<project>.cdx.json
+sbom() {
+  project_name=$1
+  echo ">> writing ${project_name} SBOM"
+  ( cd ../source/${project_name} && mkdir -p build/sbom && npm sbom --sbom-format cyclonedx --sbom-type application --omit dev > build/sbom/${project_name}.cdx.json ) || exit 3
 }
 
 # build one lambda/project incrementally.  this func performs a very

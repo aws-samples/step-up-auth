@@ -763,12 +763,26 @@ describe('API Gateway', () => {
     // a missing challengeId is not a validation error: the function answers 401 NO_CHALLENGE
     expect(model.Properties.Schema.required).toBeUndefined();
 
-    const posts = Object.values(template.findResources('AWS::ApiGateway::Method'))
-      .filter((m) => m.Properties.HttpMethod === 'POST' && m.Properties.AuthorizationType === 'COGNITO_USER_POOLS'
-        && m.Properties.RequestValidatorId);
-    expect(posts).toHaveLength(1);
-    expect(posts[0].Properties.RequestValidatorId).toStrictEqual({ Ref: validatorId });
-    expect(posts[0].Properties.RequestModels).toStrictEqual({ 'application/json': { Ref: modelId } });
+    const withModel = Object.values(template.findResources('AWS::ApiGateway::Method'))
+      .filter((m) => m.Properties.RequestModels);
+    expect(withModel).toHaveLength(1);
+    expect(withModel[0].Properties.HttpMethod).toBe('POST');
+    expect(withModel[0].Properties.RequestValidatorId).toStrictEqual({ Ref: validatorId });
+    expect(withModel[0].Properties.RequestModels).toStrictEqual({ 'application/json': { Ref: modelId } });
+    // the respond-to-challenge function answers a missing Authorization header itself (401 UNAUTHENTICATED)
+    expect(withModel[0].Properties.RequestParameters).toBeUndefined();
+  });
+
+  it('validates every other method and requires its Authorization header', () => {
+    const validatorId = Object.keys(template.findResources('AWS::ApiGateway::RequestValidator'))[0];
+    const methods = Object.values(template.findResources('AWS::ApiGateway::Method'))
+      .filter((m) => m.Properties.HttpMethod !== 'OPTIONS' && !m.Properties.RequestModels);
+    // GET /info, POST /initiate-auth, POST /transfer
+    expect(methods).toHaveLength(3);
+    for (const method of methods) {
+      expect(method.Properties.RequestValidatorId).toStrictEqual({ Ref: validatorId });
+      expect(method.Properties.RequestParameters).toStrictEqual({ 'method.request.header.Authorization': true });
+    }
   });
 
   it('authorizes every non-OPTIONS method; OPTIONS preflights are mock integrations', () => {

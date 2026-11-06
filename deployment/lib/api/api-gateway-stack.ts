@@ -20,6 +20,8 @@ const STAGE_NAME = 'dev';
 /** stage-wide throttling: steady-state requests per second, and burst */
 const THROTTLING_RATE_LIMIT = 10;
 const THROTTLING_BURST_LIMIT = 20;
+/** method request parameters: the Authorization header (access token) is required */
+const AUTHORIZATION_HEADER_REQUIRED = { 'method.request.header.Authorization': true };
 
 export interface ApiGatewayProps extends cdk.StackProps {
   readonly environmentPrefix?: string;
@@ -126,10 +128,13 @@ export class ApiGatewayStack extends cdk.Stack {
     });
     (this.api.node.defaultChild as apigateway.CfnRestApi).securityPolicy = 'TLS_1_2';
 
-    // request validation for the only method with a request body: POST /respond-to-challenge takes a
-    // JSON object whose optional challengeId is the 32-character hex id minted by /initiate-auth.  A
-    // body that isn't such an object is rejected with 400 before the function runs; a missing
-    // challengeId still reaches the function, which answers 401 NO_CHALLENGE.
+    // request validation on every method (the CORS preflights aside):
+    // - GET /info, POST /initiate-auth and POST /transfer take no body or parameters; they require the
+    //   Authorization header that carries the access token
+    // - POST /respond-to-challenge takes a JSON object whose optional challengeId is the 32-character
+    //   hex id minted by /initiate-auth.  A body that isn't such an object is rejected with 400 before
+    //   the function runs; a missing challengeId still reaches the function, which answers 401
+    //   NO_CHALLENGE, and so does a missing Authorization header (401 UNAUTHENTICATED)
     const requestValidator = this.api.addRequestValidator('request-validator', {
       validateRequestBody: true,
       validateRequestParameters: true
@@ -176,6 +181,8 @@ export class ApiGatewayStack extends cdk.Stack {
     info.addMethod("GET", infoIntegration, {
       authorizationType: apigateway.AuthorizationType.CUSTOM,
       authorizer: requestAuthorizer,
+      requestValidator: requestValidator,
+      requestParameters: AUTHORIZATION_HEADER_REQUIRED,
       methodResponses: this.getDefaultMethodResponses()
     });
 
@@ -189,6 +196,8 @@ export class ApiGatewayStack extends cdk.Stack {
     initiateAuth.addMethod("POST", initiateAuthIntegration, {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: cognitoAuthorizer,
+      requestValidator: requestValidator,
+      requestParameters: AUTHORIZATION_HEADER_REQUIRED,
       methodResponses: this.getDefaultMethodResponses()
     });
 
@@ -219,6 +228,8 @@ export class ApiGatewayStack extends cdk.Stack {
     transfer.addMethod("POST", transferIntegration, {
       authorizationType: apigateway.AuthorizationType.CUSTOM,
       authorizer: requestAuthorizer,
+      requestValidator: requestValidator,
+      requestParameters: AUTHORIZATION_HEADER_REQUIRED,
       methodResponses: this.getDefaultMethodResponses()
     });
 

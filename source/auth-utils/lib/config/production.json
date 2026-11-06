@@ -1,6 +1,6 @@
 {
   "logging": {
-    "level": "info",
+    "level": "warn",
     "colorize_console": false,
     "show_timestamp": false
   }

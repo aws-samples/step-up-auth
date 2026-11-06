@@ -199,7 +199,7 @@ CDK will create several resources in your account as below:
   - `sessions` table that holds temporary, user-initiate step-up sessions and their current status.
 - A React WebUI that demonstrates how to invoke a privileged API and go through step-up authentication.  It is served by a CloudFront distribution from a private S3 bucket through an origin access control, with security response headers (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, HSTS and `X-Content-Type-Options: nosniff`).  A second, private S3 bucket receives the CloudFront access logs and the web bucket's server access logs, and deletes them after 30 days.
 
-Prior to deploying the solution, build the necessary resources first.  Use the accompanying `build.sh` script in the `deployment` folder.  It runs `npm ci` in every project (so each `package-lock.json` must be in sync with its `package.json`), builds the `auth-utils` and `auth-sdk` libraries, and packages the four Lambda functions into zip files under `source/<module>/build/compressed/`.  Simply trigger the build script from a terminal window as follows:
+Prior to deploying the solution, build the necessary resources first.  Use the accompanying `build.sh` script in the `deployment` folder.  It runs `npm ci` in every project (so each `package-lock.json` must be in sync with its `package.json`), builds the `auth-utils` and `auth-sdk` libraries, packages the four Lambda functions into zip files under `source/<module>/build/compressed/`, and writes a CycloneDX software bill of materials of each Lambda function's and the web app's production dependencies to `source/<module>/build/sbom/<module>.cdx.json` (with `npm sbom`).  Simply trigger the build script from a terminal window as follows:
 
 ```sh
 cd deployment && npm ci && ./build.sh
@@ -291,7 +291,7 @@ Deleting a log group permanently deletes its log events.
 
 #### Logging
 
-The Lambda functions log at `debug` level when `NODE_ENV=development` and at `info` level when `NODE_ENV=production`.  Debug logs include the environment, the incoming event and decoded token claims, but sensitive values are redacted:
+The Lambda functions log at `debug` level when `NODE_ENV=development` and at `warn` level (warnings and errors only) when `NODE_ENV=production`.  Debug logs include the environment, the incoming event and decoded token claims, but sensitive values are redacted:
 
 - Environment variables named `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`, or whose name contains `SECRET`, `TOKEN`, `PASSWORD` or `CREDENTIAL`, are logged as `<redacted>`.
 - A JWT is never logged in full.  It is replaced with a summary: the first 12 characters, the header `kid`/`alg`, and the claims `sub`, `username`, `cognito:username`, `jti`, `exp`, `iat`, `token_use`, `scope`, `client_id` and `aud`.
