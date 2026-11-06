@@ -293,7 +293,7 @@ Deleting a log group permanently deletes its log events.
 
 The Lambda functions log at `debug` level when `NODE_ENV=development` and at `warn` level (warnings and errors only) when `NODE_ENV=production`.  Debug logs include the environment, the incoming event and decoded token claims, but sensitive values are redacted:
 
-- Environment variables named `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`, or whose name contains `SECRET`, `TOKEN`, `PASSWORD` or `CREDENTIAL`, are logged as `<redacted>`.
+- Only the values of the sample's own settings (the `COGNITO_*`, `USER_POOL_ID`, `ENV_PREFIX`, `SESSION_TABLE_ITEM_TTL` and `STEP_UP_*` variables) and of the Lambda runtime's non-secret variables (for example `AWS_REGION` and `AWS_LAMBDA_FUNCTION_NAME`) are logged.  Every other environment variable, including `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN`, is logged as `<redacted>`, whatever its name.
 - A JWT is never logged in full.  It is replaced with a summary: the first 12 characters, the header `kid`/`alg`, and the claims `sub`, `username`, `cognito:username`, `jti`, `exp`, `iat`, `token_use`, `scope`, `client_id` and `aud`.
 - `Authorization`, `Identification`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key` and `X-Amz-Security-Token` header values are replaced with the JWT summary (for a bearer JWT) or `<masked>`.
 - The request body is logged as `<masked>`, and the claims that API Gateway's Cognito authorizer adds to the event (`requestContext.authorizer.claims`) keep only `sub`, `cognito:username`, `token_use`, `aud`, `iss`, `exp`, `iat` and `auth_time`, so the email address and phone number are not logged.

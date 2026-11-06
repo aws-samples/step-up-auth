@@ -101,6 +101,28 @@ describe('Logger redaction', () => {
     expect(description).not.toHaveProperty('NODE_ENV');
   });
 
+  it('redacts every variable that is not a known non-secret setting, whatever its name', () => {
+    const description = Logger.describeEnvironment({
+      API_KEY: 'made-up-api-key',
+      PRIVATE_KEY: 'made-up-private-key',
+      DB_PWD: 'made-up-db-pwd',
+      PASSPHRASE: 'made-up-passphrase',
+      DATABASE_URL: 'postgres://user:made-up@db.example.com/app',
+      COGNITO_CLIENT_ID: '1example23456789abcdefghij',
+      STEP_UP_CHALLENGE_TTL: '600',
+      AWS_LAMBDA_FUNCTION_NAME: 'step-up-auth-function'
+    });
+    expect(description.API_KEY).toBe('<redacted>');
+    expect(description.PRIVATE_KEY).toBe('<redacted>');
+    expect(description.DB_PWD).toBe('<redacted>');
+    expect(description.PASSPHRASE).toBe('<redacted>');
+    expect(description.DATABASE_URL).toBe('<redacted>');
+    // the sample's settings and the Lambda runtime's non-secret variables are shown
+    expect(description.COGNITO_CLIENT_ID).toBe('1example23456789abcdefghij');
+    expect(description.STEP_UP_CHALLENGE_TTL).toBe('600');
+    expect(description.AWS_LAMBDA_FUNCTION_NAME).toBe('step-up-auth-function');
+  });
+
   it('logs raw values when LOG_RAW_SECRETS=true outside Lambda', () => {
     process.env.LOG_RAW_SECRETS = 'true';
     expect(Logger.isRawSecretsAllowed()).toBe(true);

@@ -17,10 +17,20 @@ if (process.env.NODE_ENV === 'local' || process.env.NODE_ENV === 'test') {
 import config from 'config';
 import { jwtDecode } from 'jwt-decode';
 
-// environment variables that hold AWS credentials.  Their values are always redacted
+// environment variables that hold AWS credentials.  Their values are always redacted, in every log line
 const AWS_CREDENTIAL_ENV_KEYS = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'];
-// any other environment variable whose name matches this pattern is redacted as well
-const SENSITIVE_ENV_KEY_PATTERN = /SECRET|TOKEN|PASSWORD|CREDENTIAL/i;
+// environment variables whose values the debug log shows: the sample's own settings and the Lambda
+// runtime's non-secret variables.  Every other variable is shown as <redacted>, whatever its name, so a
+// secret that is added later under any name never reaches the log
+const LOGGED_ENV_KEYS = [
+  'COGNITO_ISSUER', 'COGNITO_USER_POOL_ARN', 'COGNITO_CLIENT_ID', 'USER_POOL_ID', 'ENV_PREFIX',
+  'SESSION_TABLE_ITEM_TTL', 'SESSION_ID_EXP_TIMEOUT', 'STEP_UP_CHALLENGE_TTL', 'STEP_UP_MAX_REAUTH_AGE',
+  'STEP_UP_CHALLENGE_CLOCK_SKEW', 'STEP_UP_REAUTH_FUTURE_SKEW',
+  'AWS_REGION', 'AWS_DEFAULT_REGION', 'AWS_EXECUTION_ENV', 'AWS_LAMBDA_FUNCTION_NAME',
+  'AWS_LAMBDA_FUNCTION_VERSION', 'AWS_LAMBDA_FUNCTION_MEMORY_SIZE', 'AWS_LAMBDA_LOG_GROUP_NAME',
+  'AWS_LAMBDA_LOG_STREAM_NAME', 'AWS_LAMBDA_INITIALIZATION_TYPE', 'LAMBDA_TASK_ROOT', 'LAMBDA_RUNTIME_DIR',
+  '_HANDLER', 'TZ', 'LANG', 'PATH', 'LD_LIBRARY_PATH'
+];
 // request headers whose values are masked by sanitizeEvent(): the sample's token headers and the
 // standard credential headers
 const SENSITIVE_HEADER_PATTERN =
@@ -116,7 +126,7 @@ class Logger {
     this.logger.debug(`ALLOW_CONFIG_MUTATIONS: ${process.env.ALLOW_CONFIG_MUTATIONS}`);
     this.logger.debug(`SUPPRESS_NO_CONFIG_WARNING: ${process.env.SUPPRESS_NO_CONFIG_WARNING}`);
 
-    // display remaining environment variables (credential values are redacted)
+    // display remaining environment variables (only the values of known non-secret variables are shown)
     const environment = Logger.describeEnvironment(process.env);
     Object.keys(environment).forEach((key) => {
       this.logger.debug(Logger.redactText(`${key}: ${environment[key]}`));
@@ -247,26 +257,27 @@ class Logger {
   }
 
   /**
-   * Redact the value of a credential environment variable: the three AWS_* credential keys
-   * and any key whose name contains SECRET, TOKEN, PASSWORD or CREDENTIAL.
+   * Redact the value of an environment variable unless it is one of the known non-secret variables
+   * (the sample's settings and the Lambda runtime's non-secret variables).  Redaction is by default:
+   * the AWS credential variables and any variable that isn't listed, whatever its name, are redacted.
    * @param {string} key environment variable name
    * @param {string} value environment variable value
-   * @returns {string} `<redacted>` for credential keys, otherwise the value unchanged
+   * @returns {string} the value for a known non-secret variable, otherwise `<redacted>`
    */
   public static redactEnvValue(key: string, value: string | undefined): string | undefined {
     if (value === undefined || Logger.isRawSecretsAllowed()) {
       return value;
     }
-    if (AWS_CREDENTIAL_ENV_KEYS.includes(key) || SENSITIVE_ENV_KEY_PATTERN.test(key)) {
-      return REDACTED;
+    if (LOGGED_ENV_KEYS.includes(key)) {
+      return value;
     }
-    return value;
+    return REDACTED;
   }
 
   /**
    * Describe environment variables for debug logging.  NODE_* keys, ALLOW_CONFIG_MUTATIONS and
    * SUPPRESS_NO_CONFIG_WARNING are left out (the constructor logs them separately).
-   * Credential values are redacted with redactEnvValue().
+   * Values are redacted with redactEnvValue(), so only known non-secret values are shown.
    * @param {NodeJS.ProcessEnv} env environment, typically process.env
    * @returns {Record<string, string | undefined>} environment variable name to printable value
    */
