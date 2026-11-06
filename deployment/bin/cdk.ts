@@ -13,7 +13,13 @@ import {
   parseStepUpChallengeClockSkew,
   parseStepUpReauthFutureSkew } from '../lib/context';
 
-const app = new cdk.App();
+// The templates carry no BootstrapVersion parameter and CheckBootstrapVersion rule.  deploy.sh runs
+// `cdk bootstrap` right before `cdk deploy`, so the bootstrap stack is always current, and without the
+// parameter a synthesized template can be imported into another CDK app (CfnInclude), which is how
+// template scanners such as cdk-nag read it.
+const app = new cdk.App({
+  defaultStackSynthesizer: new cdk.DefaultStackSynthesizer({ generateBootstrapVersionRule: false })
+});
 
 // pre-flight checks - set common variables that are used across all stacks
 const awsRegion: string | undefined =
