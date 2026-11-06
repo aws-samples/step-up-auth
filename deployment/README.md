@@ -15,7 +15,7 @@ Prerequisites: Node.js 24 and npm 11 (the Lambda functions run on `nodejs24.x`),
 * `npm run test`    perform the jest unit tests
 * `npx cdk synth`   emits the synthesized CloudFormation templates (needs the Lambda zips from `./build.sh`)
 * `npx cdk diff`    compare deployed stack with current state
-* `npx cdk deploy --all`  deploy all 7 stacks to the account and region set below (`./deploy.sh` also bootstraps the account and uploads the web app)
+* `npx cdk deploy --all`  deploy all 5 stacks to the account and region set below (`./deploy.sh` also bootstraps the account and uploads the web app)
 
 The app reads these context values: `aws_account`, `aws_region`, `env_prefix`, `node_env`, and the optional step-up tuning values `session_table_item_ttl` (default 900, range 60–900), `step_up_challenge_ttl` (default 600, range 60–900), `step_up_max_reauth_age` (default 120, range 30–900), `step_up_challenge_clock_skew` (default 1, range 0–10) and `step_up_reauth_future_skew` (default 5, range 0–10).  An out-of-range step-up value fails the deployment.  The user pool's MFA setting is not a context value: the CDK code fixes it at required, with the software token (authenticator app) as the only factor, and a unit test fails if that changes.  The `AWS_ACCOUNT`, `AWS_REGION` and `NODE_ENV` environment variables, when set, take precedence over `aws_account`, `aws_region` and `node_env`.  For example, to synthesize without deploying:
 
@@ -28,7 +28,20 @@ The Cognito stack creates the user pool, its web app client and a pre token gene
 * the user pool requires MFA with the software token (authenticator app) as the only factor, requires the `email` and `phone_number` attributes, doesn't remember devices and uses the Essentials feature plan;
 * the trigger (event version V2_0, inline code from `lib/infrastructure/pre-token-generation.ts`) removes the `aws.cognito.signin.user.admin` scope from every access token the pool issues.  It has its own role, which can only write the trigger's log group.
 
-The Lambda stack gives the respond-to-challenge function the user pool id (`USER_POOL_ID`) and a policy that allows `cognito-idp:AdminGetUser` and `cognito-idp:GetUserPoolMfaConfig` on this user pool only.
+The Cognito user pool also has an explicit password policy: at least 14 characters with a lower-case letter, an upper-case letter, a digit and a symbol.
+
+The app has 5 stacks: Cognito and DynamoDb (`lib/infrastructure`), Lambda and APIG (`lib/api`), and Cloudfront (`lib/webui`).
+
+Each of the four step-up Lambda functions has its own execution role and its own log group (30-day retention, removed with the stack).  A role carries no AWS managed policy; it can write its function's log group and make only the calls that function makes:
+
+* authorizer (APIG stack): `dynamodb:GetItem` on the setting table, `dynamodb:GetItem` and `dynamodb:PutItem` on the session table;
+* initiate (Lambda stack): `dynamodb:PutItem` on the session table;
+* respond-to-challenge (Lambda stack): `dynamodb:GetItem`, `dynamodb:PutItem` and `dynamodb:DeleteItem` on the session table, and `cognito-idp:AdminGetUser` and `cognito-idp:GetUserPoolMfaConfig` on this user pool (the function also gets the pool id in `USER_POOL_ID`);
+* sample API (Lambda stack): nothing else.
+
+API Gateway invokes the authorizer and the three integration functions through Lambda resource-based permissions that are scoped (`aws:SourceArn`) to this API, so no IAM role trusts `apigateway.amazonaws.com`.  The APIG stack creates a regional REST API with the `TLS_1_2` security policy, a request validator and JSON model for `POST /respond-to-challenge`, and the `dev` stage with JSON access logs and `ERROR` execution logs (both 30-day retention, no request or response data) and throttling of 10 requests per second with a burst of 20.  The stage logs need the account's API Gateway CloudWatch Logs role; see "API Gateway logging" in the [project README](../README.md).
+
+The Cloudfront stack creates the private web bucket, an access-log bucket (logs expire after 30 days) and the distribution.  The distribution reads the bucket through an origin access control (the bucket policy names this distribution), redirects HTTP to HTTPS, adds security headers (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, HSTS, `X-Content-Type-Options: nosniff`) and writes access logs.
 
 ## Deployment steps
 
@@ -71,13 +84,13 @@ export CDK_OUTPUTS_FILE=$PWD/cdk-outputs.json
 cd deployment && ./deploy.sh
 ```
 
-To remove the solution, run `undeploy.sh` with the same variables.  It runs `cdk destroy --all --force` (CDK synthesizes the app first, so the Lambda zips from `build.sh` must still be present), which also deletes the Cognito user pool, the DynamoDB tables and the web bucket with its objects.  The CDK bootstrap stack (`CDKToolkit`) is not removed.
+To remove the solution, run `undeploy.sh` with the same variables.  It runs `cdk destroy --all --force` (CDK synthesizes the app first, so the Lambda zips from `build.sh` must still be present), which also deletes the Cognito user pool, the DynamoDB tables, the web bucket and the access-log bucket with their objects, and the log groups of the five Lambda functions and of the API stage.  The CDK bootstrap stack (`CDKToolkit`) is not removed.
 
 ```sh
 cd deployment && ./undeploy.sh
 ```
 
-The Lambda CloudWatch log groups are not removed either.  `cdk.json` sets `@aws-cdk/aws-lambda:useCdkManagedLogGroup` to `true`, so CDK creates a log group for each of the four Lambda functions with a `RETAIN` removal policy, and `cdk destroy` keeps them.  The helper function that empties the web bucket also leaves its log group behind.  The pre token generation trigger's log group is the exception: it has a `DESTROY` removal policy, so `cdk destroy` deletes it.  The retained log groups' names start with `/aws/lambda/StepUpAuth`, as do the log groups of an earlier version of this sample in the same account and region.  List them, check the list, then delete them (this permanently deletes their log events):
+One log group stays behind: the CDK helper function that empties the two buckets on delete gets a log group that Lambda creates itself, so `cdk destroy` doesn't know about it.  Its name starts with `/aws/lambda/StepUpAuth`, as do the retained log groups of an earlier version of this sample in the same account and region.  List them, check the list, then delete them (this permanently deletes their log events):
 
 ```sh
 aws logs describe-log-groups --region "$AWS_REGION" --log-group-name-prefix /aws/lambda/StepUpAuth \
@@ -88,7 +101,7 @@ for group in $(aws logs describe-log-groups --region "$AWS_REGION" --log-group-n
 done
 ```
 
-With `NODE_ENV=development` the Lambda functions write debug logs; credential environment values and JWTs are redacted.  `LOG_RAW_SECRETS=true` turns redaction off for local runs only, never inside Lambda.
+With `NODE_ENV=development` the Lambda functions write debug logs; credential environment values, JWTs, credential headers, request bodies and personal claims are redacted.  `LOG_RAW_SECRETS=true` turns redaction off for local runs only, never inside Lambda.
 
 To run the web app locally on http://127.0.0.1:8080 against the deployed backend:
 

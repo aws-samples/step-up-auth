@@ -9,6 +9,7 @@
 > - **Browser tokens can no longer manage MFA, and MFA is required.** Cognito access tokens carry the `aws.cognito.signin.user.admin` scope by default, so in earlier versions the holder of a stolen access token could turn MFA off, register their own authenticator or change the phone number before a step-up re-authentication. A pre token generation Lambda trigger now removes that scope from every access token the user pool issues. The user pool requires MFA with an authenticator app as the only factor: each user sets up the authenticator at first sign-in, and nobody can turn MFA off or change the factor from the app afterwards. The authenticator a step-up re-authentication uses is therefore always the one set up before the step-up challenge. The SMS factor and the web app's Setting page are removed. See [Security model and limitations](#security-model-and-limitations).
 > - **Amazon Cognito native step-up.** Amazon Cognito now offers [native step-up authentication with `acr`/`amr` claims](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-step-up-authentication.html) (rolling out); this sample does not depend on it.
 > - **Other fixes:** the respond-to-challenge function now waits for the access token signature check and for the session update to be saved. Debug logs redact AWS credentials and tokens. The Lambda role can access only this solution's DynamoDB tables. The authorizer denies requests it can't evaluate, and an API's `STEP_UP_DENY` setting now applies even when the caller has completed step-up.
+> - **Deployment hardening:** each Lambda function has its own execution role with only the table and user pool actions it makes, and no role carries an AWS managed policy; API Gateway invokes the functions through Lambda permissions scoped to this API instead of IAM roles.  The API is a regional endpoint with a TLS 1.2 minimum, validates the respond-to-challenge request body, throttles requests, and writes access and execution logs with a 30-day retention.  The CloudFront distribution reads the web bucket through an origin access control, sends anti-framing and HSTS security headers, and writes access logs.  The user pool has an explicit password policy (at least 14 characters).  The unused `token` table and its code are removed.  The authorizer looks up an API's setting by its API Gateway resource path, and the web app no longer writes codes, personal data or the Amplify session to the browser console.  The deployment needs the account's API Gateway CloudWatch Logs role; see [API Gateway logging](#api-gateway-logging).
 > - **Platform:** the Lambda functions run on Node.js 24, the deployment uses AWS CDK v2, and the web app uses Amplify JS v6.
 > - **If you deployed an earlier version with `NODE_ENV=development`,** its Lambda log groups may contain the functions' temporary AWS credentials and users' tokens. Restrict access to those log groups or delete them.
 > - **Blog posts:** the published [Part 1](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-1-solution-overview/) and [Part 2](https://aws.amazon.com/blogs/security/implement-step-up-authentication-with-amazon-cognito-part-2-deploy-and-test-the-solution/) describe an earlier version of this solution. Updated versions of Part 1 and Part 2 are being prepared to match this sample. Until they are published, the code and this README are authoritative wherever they differ. The main changes the updated posts will reflect: step-up is now a fresh re-authentication (your password, then your authenticator code) bound to a one-time challenge, rather than entering a one-time code; multi-factor authentication is a TOTP authenticator app that each user sets up at first sign-in, rather than SMS one-time codes or choosing a method on a Setting page; browser access tokens can no longer manage MFA or profile attributes; and DynamoDB TTL only removes old session rows, it doesn't end a step-up session.
@@ -96,7 +97,7 @@ A sample record in this table is given below.  Let's go through each attribute:
 
 Next, let us look at the setting table.  Each entry in this table correlate to an API configuration indicating whether a step-up authentication is required.  Two sample API values are shown below to.
 
-- id is the primary key for setting table.  It represents an api path.  Referring to API Gateway, an API path is present in API Gateway Lambda Proxy Integration Event as path attribute.  It doesn't contain API stage.
+- id is the primary key for setting table.  It is the API Gateway resource path of the API, exactly as it is defined in API Gateway, for example `/transfer`.  The authorizer reads it from the `resource` field of the authorizer event, so it doesn't contain the API stage, a custom-domain base path or a trailing slash that the caller added to the request path.  For a resource with path parameters it is the template, for example `/accounts/{accountId}`.
 •	stepUpState indicates API’s step-up authentication requirement state
   - STEP_UP_NOT_REQUIRED value indicates no additional authentication is needed for this API.
   - STEP_UP_REQUIRED value indicates that invocation of this API requires additional authentication steps.
@@ -126,9 +127,9 @@ API Gateway Authorizer is a `REQUEST` type authorizer.  It protects privileged A
 
 Request authorizer ensures that API request contains a valid access token in HTTP Authorization header.  It verifies the token with [aws-jwt-verify](https://github.com/awslabs/aws-jwt-verify): the signature (using the user pool's public keys), expiry, issuer, `token_use` (must be `access`) and `client_id` (must match the `COGNITO_CLIENT_ID` environment variable).  A request without an Authorization header gets a 401 response, and a token that fails verification gets a `deny` policy (403).
 
-Authorizer then looks up the `settings` table for the API configuration, using the API path as key.  If API configuration in settings table is set to `STEP_UP_DENY`, authorizer will return `deny` [API Gateway Authorizer Policy](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-lambda-authorizer-output.html) hence blocking the API invocation; caller will see a 403 forbidden error.  This applies even when the caller has completed step-up authentication.  If `settings` table has no item for the API path, or the `stepUpState` field is set to `STEP_UP_NOT_REQUIRED`, authorizer lets the call through by generating an `allow` [API Gateway Authorizer Policy](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-lambda-authorizer-output.html); it doesn't read or write the `sessions` table.  If `settings` table can't be read, or the item holds any other `stepUpState` value, authorizer returns a `deny` policy (403).
+Authorizer then looks up the `settings` table for the API configuration, using the API Gateway resource path of the called method (the event's `resource`, for example `/transfer`) as key.  This is the resource whose method the authorizer's `allow` policy grants, so a variant of the request path (a trailing slash, for example) can't miss the setting; an event without a resource path gets a `deny` policy (403).  If API configuration in settings table is set to `STEP_UP_DENY`, authorizer will return `deny` [API Gateway Authorizer Policy](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-lambda-authorizer-output.html) hence blocking the API invocation; caller will see a 403 forbidden error.  This applies even when the caller has completed step-up authentication.  If `settings` table has no item for the API path, or the `stepUpState` field is set to `STEP_UP_NOT_REQUIRED`, authorizer lets the call through by generating an `allow` [API Gateway Authorizer Policy](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-lambda-authorizer-output.html); it doesn't read or write the `sessions` table.  If `settings` table can't be read, or the item holds any other `stepUpState` value, authorizer returns a `deny` policy (403).
 
-If the `stepUpState` field in `settings` table is set to `STEP_UP_REQUIRED`, it indicates that user must provide additional authentication in order to call this api.  In this case, using access token's JTI claim as key, authorizer attempts to retrieve a step-up `session` from `sessions` table.  If the session's `stepUpStatus` field is set to `STEP_UP_COMPLETED` and its `ttl` is still in the future, authorizer lets the API call through with an `allow` policy.  In every other case (no session, a `ttl` that has passed or is missing, or any other `stepUpStatus`, such as `STEP_UP_REQUIRED` while a challenge is pending), authorizer will create a new `session` in `sessions` table using access token's JTI claim as session key, with `stepUpStatus` set to `STEP_UP_REQUIRED`; it will return a 401 challenge to the caller.  If `sessions` table can't be read, authorizer returns a `deny` policy (403).
+If the `stepUpState` field in `settings` table is set to `STEP_UP_REQUIRED`, it indicates that user must provide additional authentication in order to call this api.  In this case, using access token's JTI claim as key, authorizer attempts to retrieve a step-up `session` from `sessions` table.  If the session's `stepUpStatus` field is set to `STEP_UP_COMPLETED` and its `ttl` is still in the future, authorizer lets the API call through with an `allow` policy.  In every other case (no session, a `ttl` that has passed or is missing, or any other `stepUpStatus`, such as `STEP_UP_REQUIRED` while a challenge is pending), authorizer will create a new `session` in `sessions` table using access token's JTI claim as session key, with `stepUpStatus` set to `STEP_UP_REQUIRED`; it will return a 401 challenge to the caller.  If `sessions` table can't be read, or the new `STEP_UP_REQUIRED` session can't be written, authorizer returns a `deny` policy (403).
 
 Authorizer uses purpose build `auth-sdk` code to interface with both `sessions` and `settings` DynamoDB tables.  `auth-sdk` stream-lines CRUD operations on tables by providing convenience methods to create/update/delete items in tables.  Under the hood, `auth-sdk` uses [DynamoDB v3 client sdk](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/clients/client-dynamodb/index.html).
 
@@ -156,7 +157,7 @@ The Lambda accepts step-up only when all of the following hold:
 
 These two calls use the respond-to-challenge function's role, which may call `cognito-idp:AdminGetUser` and `cognito-idp:GetUserPoolMfaConfig` on this user pool only.  The function reads the pool id from its `USER_POOL_ID` environment variable and fails closed with `MFA_CHECK_FAILED` if it is missing, isn't a user pool id, or names a different pool than `COGNITO_USER_POOL_ARN`.
 
-The checks run in that order, and the `sessions` table is written only after they all pass.  A validation failure returns a 401, leaves the `sessions` table unchanged, and carries a short machine-readable `reason` — one of `NO_CHALLENGE`, `CHALLENGE_SUB_MISMATCH`, `STALE_AUTH`, `TOKEN_MISMATCH`, `MFA_NOT_ENROLLED`, `BAD_ACCESS_TOKEN`, `BAD_ID_TOKEN`, `BAD_TOKEN` or `MFA_CHECK_FAILED` — that never reveals a secret.  When every check passes, the function consumes the one-time challenge with a single conditional delete (so replaying the same challenge cannot complete a second time) and *then* writes a `STEP_UP_COMPLETED` row keyed by the **fresh** access token's JTI with `ttl = min(now + SESSION_TABLE_ITEM_TTL, access token exp)`.  Two more `reason` codes come from this final stage and are not symmetric with the validation failures: `CHALLENGE_CONSUME_FAILED` means the conditional delete didn't succeed (for example a concurrent completion consumed the challenge first), so nothing is written; `SESSION_WRITE_FAILED` means the challenge was already consumed but the completed row couldn't be written, which leaves the challenge spent and requires the user to start a new step-up from /initiate-auth.  Separately, the endpoint has two header guards.  The API Gateway Cognito authorizer validates the `Identification` ID token, so a missing or invalid `Identification` token is rejected by the gateway's authorizer with a 401 before this Lambda runs.  Once `Identification` is accepted, a request whose `Authorization` bearer token is missing or malformed is rejected by the handler before the responder runs, with a 401 body of `{"code":"UNAUTHENTICATED"}` and no `reason`.  A completed session is valid until its `ttl` passes; after that, the authorizer treats it as expired.  DynamoDB TTL deletes the item later, which can take a few days.
+The checks run in that order, and the `sessions` table is written only after they all pass.  A validation failure returns a 401, leaves the `sessions` table unchanged, and carries a short machine-readable `reason` — one of `NO_CHALLENGE`, `CHALLENGE_SUB_MISMATCH`, `STALE_AUTH`, `TOKEN_MISMATCH`, `MFA_NOT_ENROLLED`, `BAD_ACCESS_TOKEN`, `BAD_ID_TOKEN`, `BAD_TOKEN` or `MFA_CHECK_FAILED` — that never reveals a secret.  When every check passes, the function consumes the one-time challenge with a single conditional delete (so replaying the same challenge cannot complete a second time) and *then* writes a `STEP_UP_COMPLETED` row keyed by the **fresh** access token's JTI with `ttl = min(now + SESSION_TABLE_ITEM_TTL, access token exp)`.  Two more `reason` codes come from this final stage and are not symmetric with the validation failures: `CHALLENGE_CONSUME_FAILED` means the conditional delete didn't succeed (for example a concurrent completion consumed the challenge first), so nothing is written; `SESSION_WRITE_FAILED` means the challenge was already consumed but the completed row couldn't be written, which leaves the challenge spent and requires the user to start a new step-up from /initiate-auth.  Separately, the endpoint has two header guards.  The API Gateway Cognito authorizer validates the `Identification` ID token, so a missing or invalid `Identification` token is rejected by the gateway's authorizer with a 401 before this Lambda runs.  Once `Identification` is accepted, a request whose `Authorization` bearer token is missing or malformed is rejected by the handler before the responder runs, with a 401 body of `{"code":"UNAUTHENTICATED"}` and no `reason`.  API Gateway also validates a JSON request body against a model before the Lambda runs: the body must be a JSON object, and its `challengeId`, when present, must be the 32-character lower-case hex id that /initiate-auth returns.  Any other JSON body gets a 400 `Invalid request body` from the gateway.  A body without `challengeId` passes the model and gets the 401 `NO_CHALLENGE` reason from the Lambda.  A completed session is valid until its `ttl` passes; after that, the authorizer treats it as expired.  DynamoDB TTL deletes the item later, which can take a few days.
 
 The step-up proof no longer verifies or enrols an MFA factor, and the earlier one-time-code calls and their MFA method codes are gone.  A user sets up MFA once, at first sign-in: Cognito's `MFA_SETUP` challenge calls `AssociateSoftwareToken` and `VerifySoftwareToken` with the sign-in session, not with an access token, and only then issues tokens.  After that, the user can't change or turn off MFA: the web app has no MFA settings page, the sample has no MFA API, and the access tokens lack the scope that Cognito's own MFA operations require.  See [Security model and limitations](#security-model-and-limitations).
 
@@ -190,12 +191,13 @@ CDK will create several resources in your account as below:
   - two sample resources protected by the Lambda authorizer: `/transfer` (POST), which requires step-up authentication once you add its setting (see [Testing Step-up Solution](#testing-step-up-solution)), and `/info` (GET)
   - initiate-auth resource to trigger the step-up challenge response
   - respond-to-challenge resource to complete step-up challenge
+  - a regional endpoint with the `TLS_1_2` security policy (TLS 1.2 and 1.3), and a `dev` stage that throttles requests (10 per second, burst of 20) and writes JSON access logs and `ERROR`-level execution logs to CloudWatch Logs log groups with a 30-day retention
 - Lambda authorizer that is used to protect APIs
+- One IAM execution role and one CloudWatch Logs log group (30-day retention) for each of the four Lambda functions.  A role has no AWS managed policy and allows only the table and user pool actions its function makes.  API Gateway calls the functions through Lambda permissions scoped to this API; no IAM role is assumed by API Gateway.
 - DynamoDB tables
   - `settings` table that holds configuration mapping of the APIs that require elevated privileges
   - `sessions` table that holds temporary, user-initiate step-up sessions and their current status.
-  - `token` table, which `auth-sdk` supports but the sample Lambda functions don't use.
-- A React WebUI that demonstrates how to invoke a privileged API and go through step-up authentication.
+- A React WebUI that demonstrates how to invoke a privileged API and go through step-up authentication.  It is served by a CloudFront distribution from a private S3 bucket through an origin access control, with security response headers (`X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, HSTS and `X-Content-Type-Options: nosniff`).  A second, private S3 bucket receives the CloudFront access logs and the web bucket's server access logs, and deletes them after 30 days.
 
 Prior to deploying the solution, build the necessary resources first.  Use the accompanying `build.sh` script in the `deployment` folder.  It runs `npm ci` in every project (so each `package-lock.json` must be in sync with its `package.json`), builds the `auth-utils` and `auth-sdk` libraries, and packages the four Lambda functions into zip files under `source/<module>/build/compressed/`.  Simply trigger the build script from a terminal window as follows:
 
@@ -235,6 +237,21 @@ export ENV_PREFIX=dev
 - Amazon CloudWatch Logs log groups
 - IAM Roles
 
+#### API Gateway logging
+
+The API stage writes access and execution logs to CloudWatch Logs.  API Gateway writes them with the account's API Gateway CloudWatch Logs role, which is a single setting for each account and region that every REST API in that region shares.  The deployment doesn't create or replace that role, because replacing it would change the logging of the account's other APIs.  `deploy.sh` checks that it is set and stops with exit code 7 if it isn't.  Check it with:
+
+```sh
+aws apigateway get-account --region "$AWS_REGION" --query cloudwatchRoleArn --output text
+```
+
+If the output is empty or `None`, set it once for the account and region: create an IAM role that `apigateway.amazonaws.com` can assume, attach the AWS managed policy `service-role/AmazonAPIGatewayPushToCloudWatchLogs`, and set the role in the API Gateway account settings (see [Set up CloudWatch logging for REST APIs](https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-logging.html)):
+
+```sh
+aws apigateway update-account --region "$AWS_REGION" \
+  --patch-operations op=replace,path=/cloudwatchRoleArn,value=<role ARN>
+```
+
 `NODE_ENV` can be set to `development` or `production`.  It controls the log output that Lambda functions generates (see [Logging](#logging) below).  And `ENV_PREFIX` tags resources with an environment name: it is appended to the DynamoDB table names (for example `step-up-auth-session-dev`) and passed to the Lambda functions, which use it to find the tables.  The CloudFormation stack names and the web bucket name (`step-up-auth-web-ui-<account>-<region>`) don't include it, so you can deploy only one copy of the solution per account and region.
 
 The following environment variables are optional:
@@ -249,7 +266,7 @@ Finally, trigger the stack deploying:
 cd deployment && ./deploy.sh
 ```
 
-`deploy.sh` runs an incremental build, `cdk bootstrap`, `cdk deploy --all` (7 CloudFormation stacks), then builds the web app with the stack outputs and uploads it to the web bucket.  The last line of the output, `Sample Web App URL: <domain>`, shows the CloudFront distribution domain name.  Open `https://<domain>` to load the sample web app.
+`deploy.sh` checks the API Gateway CloudWatch Logs role, then runs an incremental build, `cdk bootstrap`, `cdk deploy --all` (5 CloudFormation stacks), then builds the web app with the stack outputs and uploads it to the web bucket.  The last line of the output, `Sample Web App URL: <domain>`, shows the CloudFront distribution domain name.  Open `https://<domain>` to load the sample web app.
 
 To remove the solution, use `undeploy.sh` with the same `AWS_REGION`, `AWS_ACCOUNT`, `NODE_ENV` and `ENV_PREFIX` values (and `AWS_PROFILE` for credentials):
 
@@ -257,9 +274,9 @@ To remove the solution, use `undeploy.sh` with the same `AWS_REGION`, `AWS_ACCOU
 cd deployment && ./undeploy.sh
 ```
 
-`undeploy.sh` runs `cdk destroy --all --force`.  CDK synthesizes the app first, so the Lambda zip files from `build.sh` must still be under `source/<module>/build/compressed/`.  The Cognito user pool, the DynamoDB tables and the web bucket use a `DESTROY` removal policy, so this deletes the Cognito user pool (and its users), the DynamoDB tables (and their items) and the web bucket (and its objects).  `undeploy.sh` doesn't remove the CDK bootstrap stack (`CDKToolkit`).
+`undeploy.sh` runs `cdk destroy --all --force`.  CDK synthesizes the app first, so the Lambda zip files from `build.sh` must still be under `source/<module>/build/compressed/`.  The Cognito user pool, the DynamoDB tables, the two S3 buckets and the log groups use a `DESTROY` removal policy, so this deletes the Cognito user pool (and its users), the DynamoDB tables (and their items), the web bucket and the access-log bucket (and their objects), and the log groups of the five Lambda functions (the four step-up functions and the pre token generation trigger) and of the API stage.  `undeploy.sh` doesn't remove the CDK bootstrap stack (`CDKToolkit`), or the account's API Gateway CloudWatch Logs role, which the deployment doesn't create.
 
-`undeploy.sh` also doesn't remove the Lambda CloudWatch log groups.  The deployment creates a log group for each of the four Lambda functions with a `RETAIN` removal policy (set by the `@aws-cdk/aws-lambda:useCdkManagedLogGroup` flag in `deployment/cdk.json`), so `cdk destroy` keeps them.  The helper function that empties the web bucket also leaves its log group behind.  The pre token generation trigger is a fifth function: its log group is created with a `DESTROY` removal policy, so `cdk destroy` deletes it with the Cognito stack.  All of the retained log group names start with `/aws/lambda/StepUpAuth`, and so do the log groups of an earlier version of this sample deployed in the same account and region.  List them, check that the list holds only log groups you want to remove, then delete them:
+One log group stays behind: the CDK helper function that empties the two buckets on delete gets a log group that Lambda creates itself, outside the stack.  Its name starts with `/aws/lambda/StepUpAuth`, and so do the retained log groups of an earlier version of this sample deployed in the same account and region.  List them, check that the list holds only log groups you want to remove, then delete them:
 
 ```sh
 aws logs describe-log-groups --region "$AWS_REGION" --log-group-name-prefix /aws/lambda/StepUpAuth \
@@ -278,9 +295,15 @@ The Lambda functions log at `debug` level when `NODE_ENV=development` and at `in
 
 - Environment variables named `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` or `AWS_SESSION_TOKEN`, or whose name contains `SECRET`, `TOKEN`, `PASSWORD` or `CREDENTIAL`, are logged as `<redacted>`.
 - A JWT is never logged in full.  It is replaced with a summary: the first 12 characters, the header `kid`/`alg`, and the claims `sub`, `username`, `cognito:username`, `jti`, `exp`, `iat`, `token_use`, `scope`, `client_id` and `aud`.
-- `Authorization` and `Identification` header values are replaced with the JWT summary (for a bearer JWT) or `<masked>`.
+- `Authorization`, `Identification`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key` and `X-Amz-Security-Token` header values are replaced with the JWT summary (for a bearer JWT) or `<masked>`.
+- The request body is logged as `<masked>`, and the claims that API Gateway's Cognito authorizer adds to the event (`requestContext.authorizer.claims`) keep only `sub`, `cognito:username`, `token_use`, `aud`, `iss`, `exp`, `iat` and `auth_time`, so the email address and phone number are not logged.
+- The Lambda context is not logged, only its request id.
 
-Some personal data still appears: the JWT summary above includes user identifiers (`sub`, `username` / `cognito:username`), so a `debug` log identifies the authenticated user even though the raw token and its other claims are not logged.
+Some personal data still appears: the JWT summary and the kept claims include user identifiers (`sub`, `username` / `cognito:username`), so a `debug` log identifies the authenticated user even though the raw token and its other claims are not logged.
+
+The API stage's access log has one JSON line per request (request id, caller IP, method, resource path, status, response length and time) and no headers or bodies.  Its execution log records errors only (`ERROR` level) and has data tracing turned off, so it never contains the request or response.
+
+The web app logs only fixed messages, sign-in and sign-up step names and Redux action types to the browser console.  It doesn't log codes, passwords, user names, email addresses, phone numbers, tokens or the Amplify session.  A production build (`npm run build`) turns `console.log` off.
 
 For local debugging outside Lambda, `LOG_RAW_SECRETS=true` turns redaction off.  It has no effect inside Lambda (when `AWS_LAMBDA_FUNCTION_NAME` is set).
 
@@ -298,7 +321,15 @@ Open http://127.0.0.1:8080 in your browser.  The development server listens on `
 
 ### Testing Step-up Solution
 
-Log into your AWS account and go to DynamoDB service console.  Locate the step-up-auth-setting* table.  The deployment creates this table empty, so create the following two items using DynamoDB service console.  We want the sample /transfer API to challenge user for additional authentication.  Sample /info API will not require additional challenge.
+The deployment creates the setting table (`step-up-auth-setting-<ENV_PREFIX>`, for example `step-up-auth-setting-dev`) empty.  Until you add a setting for an API, that API doesn't require step-up: the authorizer still requires a valid access token for every call to /info and /transfer, but it allows the call without a step-up session.  Add one item per API that you want to configure.  Each item has these attributes, all of type String:
+
+| Attribute | Value |
+|---|---|
+| `id` (partition key) | The API Gateway resource path of the API, exactly as defined in API Gateway: `/transfer` or `/info`.  No stage (`/dev`), no host name, no trailing slash. |
+| `stepUpState` | `STEP_UP_REQUIRED` (the API needs a completed step-up), `STEP_UP_NOT_REQUIRED` (it doesn't) or `STEP_UP_DENY` (every call is refused with 403).  Any other value is treated as `STEP_UP_DENY`. |
+| `createTimestamp`, `lastUpdateTimestamp` | ISO 8601 times, for information only; the authorizer doesn't read them. |
+
+For this walkthrough, the sample /transfer API requires step-up and the sample /info API doesn't.  In the DynamoDB console, open the `step-up-auth-setting-<ENV_PREFIX>` table, choose **Explore table items**, then **Create item**, switch to the JSON view with **View DynamoDB JSON** turned off, and create these two items one at a time:
 
 ```json
 {
@@ -306,7 +337,10 @@ Log into your AWS account and go to DynamoDB service console.  Locate the step-u
  "lastUpdateTimestamp": "2021-08-23T08:25:29.023Z",
  "stepUpState": "STEP_UP_NOT_REQUIRED",
  "createTimestamp": "2021-08-23T08:25:29.023Z"
-},
+}
+```
+
+```json
 {
  "id": "/transfer",
  "lastUpdateTimestamp": "2021-08-23T08:22:12.436Z",
@@ -315,11 +349,23 @@ Log into your AWS account and go to DynamoDB service console.  Locate the step-u
 }
 ```
 
+Or create them with the AWS CLI (with the same `AWS_REGION` and `ENV_PREFIX` as the deployment):
+
+```sh
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+aws dynamodb put-item --region "$AWS_REGION" --table-name "step-up-auth-setting-${ENV_PREFIX}" \
+  --item "{\"id\":{\"S\":\"/info\"},\"stepUpState\":{\"S\":\"STEP_UP_NOT_REQUIRED\"},\"createTimestamp\":{\"S\":\"$now\"},\"lastUpdateTimestamp\":{\"S\":\"$now\"}}"
+aws dynamodb put-item --region "$AWS_REGION" --table-name "step-up-auth-setting-${ENV_PREFIX}" \
+  --item "{\"id\":{\"S\":\"/transfer\"},\"stepUpState\":{\"S\":\"STEP_UP_REQUIRED\"},\"createTimestamp\":{\"S\":\"$now\"},\"lastUpdateTimestamp\":{\"S\":\"$now\"}}"
+```
+
+The authorizer reads the setting on every call (it doesn't cache it), so a change applies to the next request.  If you add your own API, add its setting item before you rely on it requiring step-up.
+
 Launch your web browser and load the CloudFront URL.  You will be presented with a login screen.
 
 ![](documentation/web-app-1.png)
 
-Register a new user.  The user pool requires an email address and a phone number at registration.  Use an email address you can receive mail at: Cognito emails a verification code that you must enter to confirm the account.  The phone number is only a profile attribute, not an MFA factor: the user pool has no SMS factor.  The default Cognito email sender is for testing only and has a low [daily sending limit](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html); for automated tests, create users with the [admin-create-user](https://docs.aws.amazon.com/cli/latest/reference/cognito-idp/admin-create-user.html) API (with `--message-action SUPPRESS`) and set a password with `admin-set-user-password`, which send no email.
+Register a new user.  The password must have at least 14 characters, with a lower-case letter, an upper-case letter, a digit and a symbol.  The user pool requires an email address and a phone number at registration.  Use an email address you can receive mail at: Cognito emails a verification code that you must enter to confirm the account.  The phone number is only a profile attribute, not an MFA factor: the user pool has no SMS factor.  The default Cognito email sender is for testing only and has a low [daily sending limit](https://docs.aws.amazon.com/cognito/latest/developerguide/limits.html); for automated tests, create users with the [admin-create-user](https://docs.aws.amazon.com/cli/latest/reference/cognito-idp/admin-create-user.html) API (with `--message-action SUPPRESS`) and set a password with `admin-set-user-password`, which send no email.
 
 ![](documentation/web-app-2.png)
 
@@ -378,7 +424,18 @@ What it does **not** protect against (state these plainly to anyone deploying it
 - **Existing user pools.**  The sample creates its user pool with MFA required from the start.  It doesn't show how to move an existing pool's users who have no MFA or only an SMS factor to required authenticator MFA.  Those users must set up an authenticator again, and that migration is out of scope.
 - **Administrators.**  An AWS principal with Cognito administrator permissions on the user pool is outside this model.  Restrict those permissions.
 - If your app needs users to update their own profile, add a backend API for it that requires step-up and calls Cognito with its own credentials; don't restore the `aws.cognito.signin.user.admin` scope to browser tokens.
-- The sample sets CORS `Access-Control-Allow-Origin: *` on the APIs.  Restricting CORS to your web origin is recommended as separate hardening and is not part of this change.
+- The sample sets CORS `Access-Control-Allow-Origin: *` on the APIs.  Restricting CORS to your web origin is recommended as separate hardening and is not part of this change.  The APIs don't use cookies, so a browser on another origin can't call them with the user's credentials: every call needs a token in a request header.
+
+Design choices and limitations of the sample deployment:
+
+- **An API without a setting doesn't require step-up.**  Every call to /info and /transfer still needs a valid Cognito access token, checked by the Lambda authorizer.  The setting table only selects which of those authenticated APIs also need a completed step-up (or are denied), and an API with no setting item, or with `STEP_UP_NOT_REQUIRED`, is allowed without one.  The table is empty after deployment; add a `STEP_UP_REQUIRED` item for each API that needs step-up (see [Testing Step-up Solution](#testing-step-up-solution)).  If your APIs must require step-up unless configured otherwise, change `SettingClient.getStepUpStatus` to return `STEP_UP_REQUIRED` when there is no item.  The sample APIs don't authorize per user or role: authorization beyond authentication and step-up belongs in your API.
+- **Signing out doesn't end a completed step-up session on the server.**  The web app's sign-out removes the tokens from the browser and revokes the refresh token; the `STEP_UP_COMPLETED` row stays until its `ttl` (at most `SESSION_TABLE_ITEM_TTL`, 15 minutes by default, and never later than the access token's expiry).  A copy of that access token taken before sign-out stays elevated until then.  Resetting the password doesn't end it either.  Shorten `SESSION_TABLE_ITEM_TTL` or the access token lifetime to narrow this window.
+- **Failure reasons.**  The respond-to-challenge endpoint returns a short `reason` code for each failed check (see [Respond to Challenge Endpoint](#respond-to-challenge-endpoint)) so the client can react; the caller has already passed the Cognito authorizer, and no code carries a secret.  Remove the codes if you don't want callers to tell the checks apart.
+- **Sample resources are destroyable.**  The user pool, the tables and the buckets have a `DESTROY` removal policy, and the tables have no point-in-time recovery or deletion protection, so `undeploy.sh` removes everything.  Change these for data you need to keep.
+- **No AWS WAF.**  The API stage throttles requests (10 per second, burst of 20), but neither the API nor the CloudFront distribution has an AWS WAF web ACL.  Add one with rate-based and managed rules for a production deployment.
+- **CloudFront TLS policy.**  The distribution uses the default `*.cloudfront.net` certificate, whose TLS security policy CloudFront fixes (it accepts TLS 1.0 and later).  To require TLS 1.2, serve the web app from your own domain name with an ACM certificate and set the distribution's minimum protocol version to `TLSv1.2_2021`.  The API itself uses the `TLS_1_2` security policy.
+- **CORS preflight requests are not authenticated.**  The `OPTIONS` method of each API resource answers the browser's CORS preflight, which browsers send without credentials.  It is a mock integration that returns only the CORS headers and invokes no Lambda function.
+- **Updating an earlier deployment.**  This version has different CloudFormation stacks (the IAM and S3 stacks are gone, and the web bucket moved to the Cloudfront stack), so remove an earlier deployment with its own `undeploy.sh` before you deploy this one.
 
 ## Conclusion
 
