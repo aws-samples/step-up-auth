@@ -33,13 +33,27 @@ jest.mock('../../src/config', () => ({
   default: {}
 }));
 
-import { signIn, confirmSignIn, signUp, confirmResetPassword } from 'aws-amplify/auth';
+import {
+  signIn,
+  confirmSignIn,
+  signUp,
+  confirmSignUp,
+  resendSignUpCode,
+  resetPassword,
+  confirmResetPassword,
+  getCurrentUser,
+  fetchAuthSession
+} from 'aws-amplify/auth';
 import {
   login,
   confirmLogin,
   setNewPassword,
   register,
-  confirmForgotPassword
+  confirmRegistration,
+  resendConfirmationCode,
+  forgotPassword,
+  confirmForgotPassword,
+  validateUserSession
 } from '../../src/actions/AuthActions';
 
 // The actions do not return their promise chains, so flush pending callbacks before asserting.
@@ -194,5 +208,69 @@ describe('secrets never reach the console', () => {
     expect(console.log).toHaveBeenCalled();
     expect(logged).not.toContain(SETUP_KEY);
     expect(logged).not.toContain(PASSWORD);
+  });
+});
+
+describe('codes, personal data and sessions never reach the console', () => {
+  const USERNAME = 'alice-user';
+  const EMAIL = 'alice@example.com';
+  const PHONE = '+12025550100';
+  const SIGN_UP_CODE = '654321';
+  const RESET_CODE = '112233';
+  const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWItMSJ9.access-signature';
+  const ID_TOKEN = 'eyJhbGciOiJSUzI1NiJ9.eyJlbWFpbCI6ImFsaWNlIn0.id-signature';
+  const SECRET_ACCESS_KEY = 'example-secret-access-key';
+  const USER_SUB = '11111111-2222-4333-8444-555555555555';
+
+  it('logs no sign-up or reset code, email, phone number, user name, user id, token or credential', async () => {
+    const dispatch = jest.fn();
+    const cognitoUser = { user: { username: USERNAME } };
+    const deliveryDetails = { destination: EMAIL, deliveryMedium: 'EMAIL', attributeName: 'email' };
+
+    // registration, confirmation and code resend
+    signUp.mockResolvedValueOnce({
+      isSignUpComplete: false,
+      userId: USER_SUB,
+      nextStep: { signUpStep: 'CONFIRM_SIGN_UP', codeDeliveryDetails: deliveryDetails }
+    });
+    register({ username: USERNAME, password: PASSWORD, email: EMAIL, phone: PHONE }, jest.fn())(dispatch);
+    await flushPromises();
+
+    confirmSignUp.mockResolvedValueOnce({ isSignUpComplete: true, userId: USER_SUB, nextStep: { signUpStep: 'DONE' } });
+    confirmRegistration({ cognitoUser, code: SIGN_UP_CODE }, jest.fn())(dispatch);
+    await flushPromises();
+
+    resendSignUpCode.mockResolvedValueOnce(deliveryDetails);
+    resendConfirmationCode({ cognitoUser })(dispatch);
+    await flushPromises();
+
+    // password reset
+    resetPassword.mockResolvedValueOnce({ nextStep: { resetPasswordStep: 'CONFIRM_RESET_PASSWORD_WITH_CODE', codeDeliveryDetails: deliveryDetails } });
+    forgotPassword({ username: USERNAME })(dispatch);
+    await flushPromises();
+
+    confirmResetPassword.mockResolvedValueOnce(undefined);
+    confirmForgotPassword({ username: USERNAME, code: RESET_CODE, newPassword: PASSWORD }, jest.fn())(dispatch);
+    await flushPromises();
+
+    // the Amplify session holds the tokens and, with an identity pool, AWS credentials
+    getCurrentUser.mockResolvedValueOnce({ username: USERNAME, userId: USER_SUB, signInDetails: { loginId: EMAIL } });
+    fetchAuthSession.mockResolvedValueOnce({
+      tokens: { accessToken: ACCESS_TOKEN, idToken: ID_TOKEN },
+      credentials: { accessKeyId: 'AKIAIOSFODNN7EXAMPLE', secretAccessKey: SECRET_ACCESS_KEY },
+      userSub: USER_SUB
+    });
+    validateUserSession()(dispatch);
+    await flushPromises();
+    await flushPromises();
+
+    const logged = [...console.log.mock.calls, ...console.error.mock.calls]
+      .map((args) => inspect(args, { depth: null }))
+      .join('\n');
+    expect(console.log).toHaveBeenCalled();
+    for (const secret of [SIGN_UP_CODE, RESET_CODE, EMAIL, PHONE, USERNAME, USER_SUB, ACCESS_TOKEN, ID_TOKEN,
+      SECRET_ACCESS_KEY, PASSWORD]) {
+      expect(logged).not.toContain(secret);
+    }
   });
 });

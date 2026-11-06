@@ -52,12 +52,12 @@ class Welcome extends Component {
 
   validateUserSession() {
     getCurrentUser()
-      .then(currentAuthUser => {
-        console.log('Welcome.validateUserSession():getCurrentUser() currentAuthUser:', currentAuthUser);
+      .then(_currentAuthUser => {
+        console.log('Welcome.validateUserSession():getCurrentUser() found a signed-in user');
         // grab the user session (fetchAuthSession() refreshes expired tokens)
         fetchAuthSession()
           .then(session => {
-            console.log('Welcome.validateUserSession():fetchAuthSession() session:', session);
+            console.log('Welcome.validateUserSession():fetchAuthSession() has tokens:', !!(session && session.tokens));
             // tokens are only present when the session is valid
             // if tokens have expired, lets call "logout"
             // otherwise, dispatch AUTH_USER success action and by-pass login screen
@@ -142,8 +142,8 @@ class Welcome extends Component {
     return jsxElems;
   }
 
-  handleClick(event) {
-    console.log('Welcome.handleClick() called', event);
+  handleClick(_event) {
+    console.log('Welcome.handleClick() called');
     this.setState({ validating: true });
     // simulate the in-button loading spinner before calling validateUserSession()
     this.validateUserSession();

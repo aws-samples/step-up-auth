@@ -86,7 +86,6 @@ export function transfer(mock) {
           dispatch(stepUpInitiate())
             .then(data => {
               console.log('TransferActions.transfer(): stepUpInitiate() success:', data);
-              console.log('TransferActions.transfer(): stepUpInitiate() stepUp state:', getState().stepUp);
               const errorMessage = `${err.message}. ${getState().stepUp.stepUpType}`;
               console.log('TransferActions.transfer() error:', errorMessage);
               dispatch({
@@ -99,7 +98,6 @@ export function transfer(mock) {
             })
             .catch(err2 => {
               console.log('TransferActions.transfer(): stepUpInitiate() error:', err2);
-              console.log('TransferActions.transfer(): stepUpInitiate() stepUp state:', getState().stepUp);
               // if (getState().stepUp.error && getState().stepUp.errorOrigin === STEP_UP_INITIATED) {
               dispatch({
                 type: TRANSFER_ERROR,

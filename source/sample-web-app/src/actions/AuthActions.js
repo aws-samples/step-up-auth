@@ -159,12 +159,12 @@ export function validateUserSession() {
     console.log('actions.validateUserSession()');
 
     getCurrentUser()
-      .then(currentAuthUser => {
-        console.log('actions.validateUserSession():getCurrentUser() currentAuthUser:', currentAuthUser);
+      .then(_currentAuthUser => {
+        console.log('actions.validateUserSession():getCurrentUser() found a signed-in user');
         // grab the user session (fetchAuthSession() refreshes expired tokens)
         fetchAuthSession()
           .then(session => {
-            console.log('actions.validateUserSession():fetchAuthSession() session:', session);
+            console.log('actions.validateUserSession():fetchAuthSession() has tokens:', !!(session && session.tokens));
             // tokens are only present when the session is valid
             // otherwise, dispatch AUTH_USER success action and by-pass login screen
             if (session && session.tokens) {
@@ -221,8 +221,8 @@ export function logout(navigate) {
 
     // signOut (cognito)
     signOut()
-      .then( data => {
-        console.log('actions.logout():signOut() data:', data);
+      .then( _data => {
+        console.log('actions.logout():signOut() signed out');
 
         dispatch({ type: UNAUTH_USER });
 
@@ -260,14 +260,14 @@ export function confirmLogin( { cognitoUser, code, mfaType }, navigate) {
 // Cognito - signUp()
 export function register( { username, password, email, phone }, navigate) {
   return function(dispatch) {
-    console.log('actions.register(): username, email, phone: ', { username, email, phone });
+    console.log('actions.register(): signing up');
 
     const userAttributes = { email, ...(phone ? { phone_number: phone } : {}) };
 
     // signUp (cognito)
     signUp({ username, password, options: { userAttributes } })
       .then( data => {
-        console.log('actions.register():signUp() data:', data);
+        console.log('actions.register():signUp() signUpStep:', data && data.nextStep && data.nextStep.signUpStep);
 
         // MFA is required for user registration
         if (data && data.nextStep && data.nextStep.signUpStep === 'CONFIRM_SIGN_UP') {
@@ -300,13 +300,13 @@ export function register( { username, password, email, phone }, navigate) {
 // Cognito - confirmSignUp()
 export function confirmRegistration( { cognitoUser, code }, navigate) {
   return function(dispatch) {
-    console.log('actions.confirmRegistration(): cognitoUSer, code:', { cognitoUser, code });
+    console.log('actions.confirmRegistration(): confirming the sign-up code');
     const { username } = cognitoUser.user;
 
     // confirmSignUp (cognito)
     confirmSignUp({ username, confirmationCode: code })
       .then( data => {
-        console.log('actions.confirmRegistration():confirmSignUp() data: ', data);
+        console.log('actions.confirmRegistration():confirmSignUp() signUpStep:', data && data.nextStep && data.nextStep.signUpStep);
 
         // A successful registration response doesnt contain idToken.
         // So we must redirect to login screen
@@ -330,13 +330,13 @@ export function confirmRegistration( { cognitoUser, code }, navigate) {
 // Cognito - resendSignUpCode()
 export function resendConfirmationCode( { cognitoUser } ) {
   return function(dispatch) {
-    console.log('actions.resendConfirmationCode(): username: ', { cognitoUser });
+    console.log('actions.resendConfirmationCode(): resending the sign-up code');
     const { username } = cognitoUser.user;
 
     // resendSignUpCode (cognito)
     resendSignUpCode({ username })
-      .then( data => {
-        console.log('actions.resendConfirmationCode():resendSignUpCode() data:', data);
+      .then( _data => {
+        console.log('actions.resendConfirmationCode():resendSignUpCode() sent');
 
         dispatch({ type: REGISTER_MFA, payload: cognitoUser });
 
@@ -354,12 +354,12 @@ export function resendConfirmationCode( { cognitoUser } ) {
 // Cognito - resetPassword()
 export function forgotPassword( { username } ) {
   return function(dispatch) {
-    console.log('actions.forgotPassword(): username: ', { username });
+    console.log('actions.forgotPassword(): requesting a reset code');
 
     // resetPassword (cognito)
     resetPassword({ username })
       .then( data => {
-        console.log('actions.forgotPassword():resetPassword() data:', data);
+        console.log('actions.forgotPassword():resetPassword() resetPasswordStep:', data && data.nextStep && data.nextStep.resetPasswordStep);
 
         dispatch({ type: FORGOT_PASSWORD });
       })
@@ -376,12 +376,12 @@ export function forgotPassword( { username } ) {
 // Cognito - confirmResetPassword()
 export function confirmForgotPassword( { username, code, newPassword }, navigate) {
   return function(dispatch) {
-    console.log('actions.confirmForgotPassword(): username: ', { username });
+    console.log('actions.confirmForgotPassword(): setting the new password');
 
     // confirmResetPassword (cognito)
     confirmResetPassword({ username, confirmationCode: code, newPassword })
-      .then( data => {
-        console.log('actions.confirmForgotPassword():confirmResetPassword() data:', data);
+      .then( _data => {
+        console.log('actions.confirmForgotPassword():confirmResetPassword() done');
         // TODO - User password changed successfully, do we need to login again?
         dispatch({ type: FORGOT_PASSWORD_CONFIRM });
 

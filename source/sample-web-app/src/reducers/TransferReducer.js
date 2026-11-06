@@ -20,8 +20,7 @@ export default function (state = {}, action) {
         transferData: null
       };
 
-      console.log("TransferReducer. action: ", action);
-      console.log("TransferReducer. returning props: ", returnProps);
+      console.log("TransferReducer. action: ", action.type);
       return returnProps;
     }
     case TRANSFER_SUCCESS: {
@@ -32,8 +31,7 @@ export default function (state = {}, action) {
         transferData: action.payload.data
       };
 
-      console.log("TransferReducer. action: ", action);
-      console.log("TransferReducer. returning props: ", returnProps);
+      console.log("TransferReducer. action: ", action.type);
       return returnProps;
     }
     case TRANSFER_CLEAR: {
@@ -44,8 +42,7 @@ export default function (state = {}, action) {
         transferData: null
       };
 
-      console.log("TransferReducer. action: ", action);
-      console.log("TransferReducer. returning props: ", returnProps);
+      console.log("TransferReducer. action: ", action.type);
       return returnProps;
     }
     case INFO_ERROR: {
@@ -57,8 +54,7 @@ export default function (state = {}, action) {
         infoData: null
       };
 
-      console.log("TransferReducer. action: ", action);
-      console.log("TransferReducer. returning props: ", returnProps);
+      console.log("TransferReducer. action: ", action.type);
       return returnProps;
     }
     case INFO_SUCCESS: {
@@ -69,8 +65,7 @@ export default function (state = {}, action) {
         infoData: action.payload.data
       };
 
-      console.log("TransferReducer. action: ", action);
-      console.log("TransferReducer. returning props: ", returnProps);
+      console.log("TransferReducer. action: ", action.type);
       return returnProps;
     }
     case INFO_CLEAR: {
@@ -81,8 +76,7 @@ export default function (state = {}, action) {
         infoData: null
       };
 
-      console.log("TransferReducer. action: ", action);
-      console.log("TransferReducer. returning props: ", returnProps);
+      console.log("TransferReducer. action: ", action.type);
       return returnProps;
     }
   }

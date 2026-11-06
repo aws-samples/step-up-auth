@@ -97,7 +97,7 @@ export function stepUpInitiate(mock) {
           }).response
           .then(({ statusCode, body }) => body.json().then((data) => ({ statusCode, data })))
           .then((response) => {
-            console.log("StepUpActions.stepUpInitiate(): response:", response);
+            console.log("StepUpActions.stepUpInitiate(): response:", response && response.statusCode, response && response.data && response.data.code);
             if (response && response.data && response.data.code === "REAUTH_REQUIRED") {
               dispatch({
                 type: STEP_UP_INITIATED,

@@ -25,8 +25,7 @@ export default function (state = {}, action) {
         returnProps.reauthMfaType = null;
       }
 
-      console.log("StepUpReducer. action: ", action);
-      console.log("StepUpReducer. returning props: ", returnProps);
+      console.log("StepUpReducer. action: ", action.type);
       return returnProps;
     }
     case STEP_UP_REAUTH_USERNAME: {
@@ -35,8 +34,7 @@ export default function (state = {}, action) {
         reauthUsername: action.payload.username,
       };
 
-      console.log("StepUpReducer. action: ", action);
-      console.log("StepUpReducer. returning props: ", returnProps);
+      console.log("StepUpReducer. action: ", action.type);
       return returnProps;
     }
     case STEP_UP_INITIATED: {
@@ -51,8 +49,7 @@ export default function (state = {}, action) {
         reauthMfaType: null,
       };
 
-      console.log("StepUpReducer. action: ", action);
-      console.log("StepUpReducer. returning props: ", returnProps);
+      console.log("StepUpReducer. action: ", action.type);
       return returnProps;
     }
     case STEP_UP_REAUTH_MFA_REQUIRED: {
@@ -65,8 +62,7 @@ export default function (state = {}, action) {
         reauthMfaType: action.payload.mfaType,
       };
 
-      console.log("StepUpReducer. action: ", action);
-      console.log("StepUpReducer. returning props: ", returnProps);
+      console.log("StepUpReducer. action: ", action.type);
       return returnProps;
     }
     case STEP_UP_COMPLETED: {
@@ -81,8 +77,7 @@ export default function (state = {}, action) {
         reauthUsername: null,
       };
 
-      console.log("StepUpReducer. action: ", action);
-      console.log("StepUpReducer. returning props: ", returnProps);
+      console.log("StepUpReducer. action: ", action.type);
       return returnProps;
     }
     case STEP_UP_CLEAR: {
@@ -97,8 +92,7 @@ export default function (state = {}, action) {
         reauthUsername: null,
       };
 
-      console.log("StepUpReducer. action: ", action);
-      console.log("StepUpReducer. returning props: ", returnProps);
+      console.log("StepUpReducer. action: ", action.type);
       return returnProps;
     }
   }

@@ -46,7 +46,7 @@ class Register extends Component {
       resendCode,
       navigate} = this.props;
 
-    console.log('Register.onFormSubmit() username, email, phone:', {username, email, phone});
+    console.log('Register.onFormSubmit() mfaRequired, resendCode:', {mfaRequired, resendCode});
 
     if (
       (typeof mfaRequired == 'undefined' || mfaRequired == false) &&

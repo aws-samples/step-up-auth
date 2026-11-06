@@ -50,7 +50,7 @@ class Login extends Component {
       changePassword,
       navigate} = this.props;
 
-    console.log('Login.onFormSubmit() username, mfaRequired, changePassword, cognitoUser:', {username, mfaRequired, changePassword, cognitoUser});
+    console.log('Login.onFormSubmit() mfaRequired, changePassword:', {mfaRequired, changePassword});
 
     if ((typeof mfaRequired == 'undefined' || mfaRequired == false) &&
       (typeof changePassword == 'undefined' || changePassword == false)) {
