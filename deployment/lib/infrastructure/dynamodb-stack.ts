@@ -13,7 +13,6 @@ export interface DynamoDbProps extends cdk.StackProps {
 export class DynamoDbStack extends cdk.Stack {
   public readonly sessionTable: dynamodb.Table;
   public readonly settingTable: dynamodb.Table;
-  public readonly tokenTable: dynamodb.Table;
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
   constructor(scope: Construct, id: string, props: DynamoDbProps) {
@@ -40,19 +39,6 @@ export class DynamoDbStack extends cdk.Stack {
         name: 'id', type: dynamodb.AttributeType.STRING
       },
       tableName: props.environmentPrefix ? `step-up-auth-setting-${props.environmentPrefix}` : 'step-up-auth-setting',
-      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-      removalPolicy: cdk.RemovalPolicy.DESTROY
-    });
-
-    // ----------------------------------------
-    //          step-up-auth-token-<env>
-    // ----------------------------------------
-    this.tokenTable = new dynamodb.Table(this, 'TokenTable', {
-      partitionKey: {
-        name: 'id', type: dynamodb.AttributeType.STRING
-      },
-      tableName: props.environmentPrefix ? `step-up-auth-token-${props.environmentPrefix}` : 'step-up-auth-token',
-      timeToLiveAttribute: 'ttl',
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });

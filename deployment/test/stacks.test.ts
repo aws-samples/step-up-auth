@@ -68,9 +68,8 @@ function synth(extraContext: Record<string, string> = {}): Record<string, Templa
     userPool: infrastructure.cognitoUserPool,
     userPoolClient: infrastructure.cognitoUserPoolClient,
     cognitoIssuer: infrastructure.cognitoIssuer,
-    apigatewayLambdaAuthorizerRole: infrastructure.apigatewayLambdaAuthorizerRole,
-    apigatewayExecutionRole: infrastructure.apigatewayExecutionRole,
-    lambdaExecutionRole: infrastructure.lambdaExecutionRole,
+    sessionTable: infrastructure.sessionTable,
+    settingTable: infrastructure.settingTable,
     assetRoot
   });
   new WebUI(app, 'StepUpAuthWebUi', { env: ENV });
@@ -83,15 +82,13 @@ function synth(extraContext: Record<string, string> = {}): Record<string, Templa
 }
 
 describe('step-up-auth CDK app', () => {
-  it('synthesizes the 7 stacks', () => {
+  it('synthesizes the 5 stacks', () => {
     expect(Object.keys(synth()).sort()).toStrictEqual([
       'StepUpAuthApi/APIG',
       'StepUpAuthApi/Lambda',
       'StepUpAuthInfra/Cognito',
       'StepUpAuthInfra/DynamoDb',
-      'StepUpAuthInfra/IAM',
       'StepUpAuthWebUi/Cloudfront',
-      'StepUpAuthWebUi/S3',
     ]);
   });
 
@@ -424,10 +421,10 @@ describe('pre token generation trigger', () => {
 });
 
 // ----------------------------------------
-//   least-privilege DynamoDB IAM
+//   least-privilege IAM: one role per Lambda function, no managed policies, no wildcards
 // ----------------------------------------
 
-type Statement = { Effect: string; Action: string | string[]; Resource?: unknown; Principal?: unknown };
+type Statement = { Effect: string; Action: string | string[]; Resource?: unknown; Principal?: unknown; Condition?: unknown };
 
 /** every statement of every IAM policy, inline role policy and bucket policy */
 function allStatements(templates: Record<string, Template>, types: string[]): Statement[] {
@@ -449,34 +446,192 @@ function allStatements(templates: Record<string, Template>, types: string[]): St
 
 const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [value]);
 
+/** the CDK-managed provider role that empties the buckets on delete (not one of the sample's functions) */
+const isAutoDeleteProviderRole = (logicalId: string): boolean =>
+  logicalId.startsWith('CustomS3AutoDeleteObjectsCustomResourceProviderRole');
+
+/** logical id of the execution role of the function whose logical id starts with `prefix` */
+function functionRoleId(template: Template, prefix: string): string {
+  const matches = Object.entries(template.findResources('AWS::Lambda::Function'))
+    .filter(([logicalId]) => logicalId.startsWith(prefix));
+  expect(matches).toHaveLength(1);
+  return matches[0][1].Properties.Role['Fn::GetAtt'][0];
+}
+
+/**
+ * Effective permissions of a role in `template`: every "action resource" pair granted by the IAM
+ * policies attached to it, with the resource rendered as JSON.  Fails on a Deny or a condition, which
+ * the sample's function roles don't use.
+ */
+function rolePermissions(template: Template, roleLogicalId: string): string[] {
+  const pairs: string[] = [];
+  for (const policy of Object.values(template.findResources('AWS::IAM::Policy'))) {
+    if (!JSON.stringify(policy.Properties.Roles).includes(`"${roleLogicalId}"`)) {
+      continue;
+    }
+    for (const statement of policy.Properties.PolicyDocument.Statement as Statement[]) {
+      expect(statement.Effect).toBe('Allow');
+      expect(statement.Condition).toBeUndefined();
+      for (const action of asArray(statement.Action)) {
+        for (const resource of asArray(statement.Resource)) {
+          pairs.push(`${action} ${JSON.stringify(resource)}`);
+        }
+      }
+    }
+  }
+  return pairs.sort();
+}
+
+/** the JSON rendering of a resource reference that contains `pattern`, e.g. the session table ARN */
+const ref = (pattern: RegExp) => expect.stringMatching(pattern);
+
 describe('IAM', () => {
   let templates: Record<string, Template>;
   beforeAll(() => { templates = synth(); });
 
-  it('never grants a DynamoDB action on Resource *', () => {
-    const dynamoStatements = allStatements(templates, ['AWS::IAM::Policy', 'AWS::IAM::Role'])
-      .filter((s) => asArray(s.Action).some((a) => String(a).startsWith('dynamodb:')));
-    expect(dynamoStatements).toHaveLength(1);
-    const [statement] = dynamoStatements;
-    expect(asArray(statement.Action).sort()).toStrictEqual(
-      ['dynamodb:DeleteItem', 'dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:UpdateItem']);
-    const resources = asArray(statement.Resource);
-    expect(resources).toHaveLength(3);
-    for (const resource of resources) {
-      expect(resource).not.toBe('*');
-      expect(JSON.stringify(resource)).toMatch(/SessionTable|SettingTable|TokenTable/);
+  const FUNCTIONS: [string, string][] = [
+    ['StepUpAuthApi/APIG', 'stepupauthauthorizerlambda'],
+    ['StepUpAuthApi/Lambda', 'stepupauthinitiatelambda'],
+    ['StepUpAuthApi/Lambda', 'stepupauthchallengelambda'],
+    ['StepUpAuthApi/Lambda', 'stepupauthsampleapilambda'],
+  ];
+
+  it('gives each of the 4 step-up functions its own execution role', () => {
+    const roles = FUNCTIONS.map(([stack, prefix]) => `${stack}/${functionRoleId(templates[stack], prefix)}`);
+    expect(new Set(roles).size).toBe(4);
+    for (const [stack, prefix] of FUNCTIONS) {
+      const role = templates[stack].toJSON().Resources[functionRoleId(templates[stack], prefix)];
+      expect(role.Type).toBe('AWS::IAM::Role');
+      expect(role.Properties.AssumeRolePolicyDocument.Statement).toStrictEqual([
+        { Action: 'sts:AssumeRole', Effect: 'Allow', Principal: { Service: 'lambda.amazonaws.com' } }
+      ]);
+      expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+      expect(role.Properties.Policies).toBeUndefined();
     }
   });
 
-  it('does not attach AmazonDynamoDBFullAccess to any role', () => {
+  it('attaches no AWS managed policy to any role except the CDK bucket auto-delete provider', () => {
     for (const template of Object.values(templates)) {
-      expect(JSON.stringify(template.toJSON())).not.toContain('AmazonDynamoDBFullAccess');
+      const roles = Object.entries(template.findResources('AWS::IAM::Role'))
+        .filter(([logicalId]) => !isAutoDeleteProviderRole(logicalId));
+      for (const [, role] of roles) {
+        expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+      }
+      expect(Object.keys(template.findResources('AWS::IAM::ManagedPolicy'))).toHaveLength(0);
+      const json = JSON.stringify(template.toJSON());
+      for (const managed of ['SecretsManagerReadWrite', 'AWSLambdaExecute', 'AmazonCognitoPowerUser', 'AWSLambdaRole',
+        'AmazonAPIGatewayPushToCloudWatchLogs', 'AmazonDynamoDBFullAccess']) {
+        expect(json).not.toContain(managed);
+      }
+    }
+  });
+
+  it('grants no Allow on Resource * and no wildcard action', () => {
+    for (const statement of allStatements(templates, ['AWS::IAM::Policy', 'AWS::IAM::Role']).filter((s) => s.Effect === 'Allow')) {
+      expect(asArray(statement.Resource)).not.toContain('*');
+      for (const action of asArray(statement.Action)) {
+        expect(String(action)).not.toContain('*');
+      }
+    }
+  });
+
+  it('lets the authorizer read the setting table and read and write the session table only', () => {
+    const template = templates['StepUpAuthApi/APIG'];
+    const permissions = rolePermissions(template, functionRoleId(template, 'stepupauthauthorizerlambda'));
+    expect(permissions).toHaveLength(5);
+    expect(permissions).toStrictEqual(expect.arrayContaining([
+      ref(/^dynamodb:GetItem .*SettingTable/),
+      ref(/^dynamodb:GetItem .*SessionTable/),
+      ref(/^dynamodb:PutItem .*SessionTable/),
+      ref(/^logs:CreateLogStream .*stepupauthauthorizerloggroup/),
+      ref(/^logs:PutLogEvents .*stepupauthauthorizerloggroup/),
+    ]));
+  });
+
+  it('lets the initiate function write the session table only', () => {
+    const template = templates['StepUpAuthApi/Lambda'];
+    const permissions = rolePermissions(template, functionRoleId(template, 'stepupauthinitiatelambda'));
+    expect(permissions).toHaveLength(3);
+    expect(permissions).toStrictEqual(expect.arrayContaining([
+      ref(/^dynamodb:PutItem .*SessionTable/),
+      ref(/^logs:CreateLogStream .*stepupauthinitiateloggroup/),
+      ref(/^logs:PutLogEvents .*stepupauthinitiateloggroup/),
+    ]));
+  });
+
+  it('lets the challenge responder use the session table and read the user pool MFA state only', () => {
+    const template = templates['StepUpAuthApi/Lambda'];
+    const permissions = rolePermissions(template, functionRoleId(template, 'stepupauthchallengelambda'));
+    expect(permissions).toHaveLength(7);
+    expect(permissions).toStrictEqual(expect.arrayContaining([
+      ref(/^dynamodb:GetItem .*SessionTable/),
+      ref(/^dynamodb:PutItem .*SessionTable/),
+      ref(/^dynamodb:DeleteItem .*SessionTable/),
+      ref(/^cognito-idp:AdminGetUser .*StepUpAuthUserPool\w*Arn/),
+      ref(/^cognito-idp:GetUserPoolMfaConfig .*StepUpAuthUserPool\w*Arn/),
+      ref(/^logs:CreateLogStream .*stepupauthchallengeloggroup/),
+      ref(/^logs:PutLogEvents .*stepupauthchallengeloggroup/),
+    ]));
+  });
+
+  it('lets the sample API write its own log group only', () => {
+    const template = templates['StepUpAuthApi/Lambda'];
+    const permissions = rolePermissions(template, functionRoleId(template, 'stepupauthsampleapilambda'));
+    expect(permissions).toHaveLength(2);
+    expect(permissions).toStrictEqual(expect.arrayContaining([
+      ref(/^logs:CreateLogStream .*stepupauthsampleapiloggroup/),
+      ref(/^logs:PutLogEvents .*stepupauthsampleapiloggroup/),
+    ]));
+  });
+
+  it('grants DynamoDB actions on the session and setting tables only', () => {
+    const dynamoStatements = allStatements(templates, ['AWS::IAM::Policy', 'AWS::IAM::Role'])
+      .filter((s) => asArray(s.Action).some((a) => String(a).startsWith('dynamodb:')));
+    expect(dynamoStatements.length).toBeGreaterThan(0);
+    for (const statement of dynamoStatements) {
+      for (const resource of asArray(statement.Resource)) {
+        expect(JSON.stringify(resource)).toMatch(/SessionTable|SettingTable/);
+      }
+    }
+  });
+
+  it('creates no IAM role that API Gateway can assume', () => {
+    for (const template of Object.values(templates)) {
+      for (const role of Object.values(template.findResources('AWS::IAM::Role'))) {
+        expect(JSON.stringify(role.Properties.AssumeRolePolicyDocument)).not.toContain('apigateway.amazonaws.com');
+      }
+      expect(Object.keys(template.findResources('AWS::ApiGateway::Account'))).toHaveLength(0);
+    }
+  });
+
+  it('scopes every Lambda permission for API Gateway to this API with aws:SourceArn', () => {
+    const permissions = Object.values(templates['StepUpAuthApi/APIG'].findResources('AWS::Lambda::Permission'));
+    // 4 methods x (stage + test-invoke) plus the request authorizer
+    expect(permissions).toHaveLength(9);
+    for (const permission of permissions) {
+      expect(permission.Properties.Principal).toBe('apigateway.amazonaws.com');
+      const sourceArn = JSON.stringify(permission.Properties.SourceArn);
+      expect(sourceArn).toContain('execute-api');
+      expect(sourceArn).toMatch(/stepupauthapi/);
+    }
+    const authorizerPermissions = permissions.filter((p) => JSON.stringify(p.Properties.SourceArn).includes('/authorizers/'));
+    expect(authorizerPermissions).toHaveLength(1);
+    expect(JSON.stringify(authorizerPermissions[0].Properties.FunctionName)).toContain('stepupauthauthorizerlambda');
+  });
+
+  it('configures neither authorizer credentials nor integration credentials', () => {
+    const template = templates['StepUpAuthApi/APIG'];
+    for (const authorizer of Object.values(template.findResources('AWS::ApiGateway::Authorizer'))) {
+      expect(authorizer.Properties.AuthorizerCredentials).toBeUndefined();
+    }
+    for (const method of Object.values(template.findResources('AWS::ApiGateway::Method'))) {
+      expect(method.Properties.Integration?.Credentials).toBeUndefined();
     }
   });
 });
 
 // ----------------------------------------
-//   challenge responder MFA check (USER_POOL_ID and Cognito read access)
+//   challenge responder MFA check (USER_POOL_ID)
 // ----------------------------------------
 
 describe('challenge responder MFA check', () => {
@@ -492,7 +647,7 @@ describe('challenge responder MFA check', () => {
     expect(functionEnv(templates['StepUpAuthApi/APIG'], 'stepupauthauthorizerlambda').USER_POOL_ID).toBeUndefined();
   });
 
-  it('grants only AdminGetUser and GetUserPoolMfaConfig, in one statement, on the user pool ARN', () => {
+  it('grants AdminGetUser and GetUserPoolMfaConfig in one statement, on the user pool ARN, to the challenge role only', () => {
     const cognitoStatements = allStatements(templates, ['AWS::IAM::Policy', 'AWS::IAM::Role'])
       .filter((s) => asArray(s.Action).some((a) => String(a).startsWith('cognito-idp:')));
     expect(cognitoStatements).toHaveLength(1);
@@ -501,22 +656,152 @@ describe('challenge responder MFA check', () => {
     expect(asArray(statement.Action).sort()).toStrictEqual(['cognito-idp:AdminGetUser', 'cognito-idp:GetUserPoolMfaConfig']);
     const resources = asArray(statement.Resource);
     expect(resources).toHaveLength(1);
-    expect(resources[0]).not.toBe('*');
     expect(JSON.stringify(resources[0])).toMatch(/OutputFnGetAttStepUpAuthUserPool\w*Arn/);
   });
 
-  it('attaches the grant to the Lambda execution role and creates the challenge lambda after it', () => {
+  it('creates the challenge lambda after its role policy', () => {
     const lambdaTemplate = templates['StepUpAuthApi/Lambda'];
-    const policies = Object.entries(lambdaTemplate.findResources('AWS::IAM::Policy'))
-      .filter(([logicalId]) => logicalId.startsWith('StepUpAuthChallengeCognitoPolicy'));
-    expect(policies).toHaveLength(1);
-    const [[policyLogicalId, policy]] = policies;
-    expect(JSON.stringify(policy.Properties.Roles)).toContain('StepUpAuthLambdaExecutionRole');
-    const challenge = Object.entries(lambdaTemplate.findResources('AWS::Lambda::Function'))
+    const roleId = functionRoleId(lambdaTemplate, 'stepupauthchallengelambda');
+    const [[policyLogicalId]] = Object.entries(lambdaTemplate.findResources('AWS::IAM::Policy'))
+      .filter(([, policy]) => JSON.stringify(policy.Properties.Roles).includes(`"${roleId}"`));
+    const [challenge] = Object.entries(lambdaTemplate.findResources('AWS::Lambda::Function'))
       .filter(([logicalId]) => logicalId.startsWith('stepupauthchallengelambda'))
       .map(([, resource]) => resource);
-    expect(challenge).toHaveLength(1);
-    expect(challenge[0].DependsOn).toContain(policyLogicalId);
+    expect(challenge.DependsOn).toContain(policyLogicalId);
+  });
+});
+
+// ----------------------------------------
+//   log groups
+// ----------------------------------------
+
+describe('log groups', () => {
+  let templates: Record<string, Template>;
+  beforeAll(() => { templates = synth(); });
+
+  it.each([
+    ['StepUpAuthApi/APIG', 'stepupauthauthorizerlambda'],
+    ['StepUpAuthApi/Lambda', 'stepupauthinitiatelambda'],
+    ['StepUpAuthApi/Lambda', 'stepupauthchallengelambda'],
+    ['StepUpAuthApi/Lambda', 'stepupauthsampleapilambda'],
+  ])('%s %s writes its own log group with a 30-day retention, removed with the stack', (stack, prefix) => {
+    const [fn] = Object.entries(templates[stack].findResources('AWS::Lambda::Function'))
+      .filter(([logicalId]) => logicalId.startsWith(prefix)).map(([, r]) => r);
+    const logGroupId = fn.Properties.LoggingConfig.LogGroup.Ref;
+    const logGroup = templates[stack].toJSON().Resources[logGroupId];
+    expect(logGroup.Type).toBe('AWS::Logs::LogGroup');
+    expect(logGroup.Properties.RetentionInDays).toBe(30);
+    expect(logGroup.DeletionPolicy).toBe('Delete');
+  });
+
+  it('sets a retention on every log group in the app', () => {
+    for (const template of Object.values(templates)) {
+      for (const logGroup of Object.values(template.findResources('AWS::Logs::LogGroup'))) {
+        expect(logGroup.Properties.RetentionInDays).toBeGreaterThan(0);
+        expect(logGroup.DeletionPolicy).toBe('Delete');
+      }
+    }
+  });
+});
+
+// ----------------------------------------
+//   API Gateway: endpoint, logging, throttling, request validation
+// ----------------------------------------
+
+describe('API Gateway', () => {
+  let template: Template;
+  beforeAll(() => { template = synth()['StepUpAuthApi/APIG']; });
+
+  it('uses a regional endpoint with the TLS_1_2 security policy', () => {
+    const [api] = Object.values(template.findResources('AWS::ApiGateway::RestApi'));
+    expect(api.Properties.EndpointConfiguration).toStrictEqual({ Types: ['REGIONAL'] });
+    expect(api.Properties.SecurityPolicy).toBe('TLS_1_2');
+  });
+
+  it('writes stage access logs as JSON to a log group with a retention', () => {
+    const [stage] = Object.values(template.findResources('AWS::ApiGateway::Stage'));
+    expect(stage.Properties.StageName).toBe('dev');
+    // the destination is the access log group's ARN (rendered with or without a trailing ':*')
+    const [[logGroupId, logGroup]] = Object.entries(template.findResources('AWS::Logs::LogGroup'))
+      .filter(([id]) => id.startsWith('accessloggroup'));
+    expect(JSON.stringify(stage.Properties.AccessLogSetting.DestinationArn)).toContain(`"${logGroupId}"`);
+    expect(logGroup.Type).toBe('AWS::Logs::LogGroup');
+    expect(logGroup.Properties.RetentionInDays).toBe(30);
+    const format = JSON.parse(stage.Properties.AccessLogSetting.Format);
+    expect(format).toEqual(expect.objectContaining({ requestId: '$context.requestId', status: '$context.status' }));
+  });
+
+  it('enables execution logging at ERROR without data tracing, and throttles every method', () => {
+    const [stage] = Object.values(template.findResources('AWS::ApiGateway::Stage'));
+    expect(stage.Properties.MethodSettings).toStrictEqual([{
+      DataTraceEnabled: false,
+      HttpMethod: '*',
+      LoggingLevel: 'ERROR',
+      ResourcePath: '/*',
+      ThrottlingBurstLimit: 20,
+      ThrottlingRateLimit: 10
+    }]);
+  });
+
+  it('declares the execution log group with a retention before the stage', () => {
+    const [[groupId, group]] = Object.entries(template.findResources('AWS::Logs::LogGroup'))
+      .filter(([, g]) => JSON.stringify(g.Properties.LogGroupName || '').includes('API-Gateway-Execution-Logs_'));
+    expect(JSON.stringify(group.Properties.LogGroupName)).toContain('/dev');
+    expect(group.Properties.RetentionInDays).toBe(30);
+    const [stage] = Object.values(template.findResources('AWS::ApiGateway::Stage'));
+    expect(stage.DependsOn).toContain(groupId);
+  });
+
+  it('validates the POST /respond-to-challenge body against a JSON model', () => {
+    const validators = Object.entries(template.findResources('AWS::ApiGateway::RequestValidator'));
+    expect(validators).toHaveLength(1);
+    const [[validatorId, validator]] = validators;
+    expect(validator.Properties.ValidateRequestBody).toBe(true);
+    const [[modelId, model]] = Object.entries(template.findResources('AWS::ApiGateway::Model'));
+    expect(model.Properties.ContentType).toBe('application/json');
+    expect(model.Properties.Schema.properties.challengeId).toStrictEqual({ type: 'string', pattern: '^[0-9a-f]{32}$' });
+    // a missing challengeId is not a validation error: the function answers 401 NO_CHALLENGE
+    expect(model.Properties.Schema.required).toBeUndefined();
+
+    const posts = Object.values(template.findResources('AWS::ApiGateway::Method'))
+      .filter((m) => m.Properties.HttpMethod === 'POST' && m.Properties.AuthorizationType === 'COGNITO_USER_POOLS'
+        && m.Properties.RequestValidatorId);
+    expect(posts).toHaveLength(1);
+    expect(posts[0].Properties.RequestValidatorId).toStrictEqual({ Ref: validatorId });
+    expect(posts[0].Properties.RequestModels).toStrictEqual({ 'application/json': { Ref: modelId } });
+  });
+
+  it('authorizes every non-OPTIONS method; OPTIONS preflights are mock integrations', () => {
+    const methods = Object.values(template.findResources('AWS::ApiGateway::Method'));
+    expect(methods).toHaveLength(8);
+    const preflights = methods.filter((m) => m.Properties.HttpMethod === 'OPTIONS');
+    const others = methods.filter((m) => m.Properties.HttpMethod !== 'OPTIONS');
+    expect(preflights).toHaveLength(4);
+    for (const method of preflights) {
+      expect(method.Properties.Integration.Type).toBe('MOCK');
+    }
+    for (const method of others) {
+      expect(['CUSTOM', 'COGNITO_USER_POOLS']).toContain(method.Properties.AuthorizationType);
+      expect(method.Properties.AuthorizerId).toBeDefined();
+    }
+  });
+});
+
+// ----------------------------------------
+//   Cognito password policy
+// ----------------------------------------
+
+describe('cognito password policy', () => {
+  it('requires 14 characters with lower case, upper case, digit and symbol', () => {
+    const [pool] = Object.values(synth()['StepUpAuthInfra/Cognito'].findResources('AWS::Cognito::UserPool'));
+    expect(pool.Properties.Policies.PasswordPolicy).toStrictEqual({
+      MinimumLength: 14,
+      RequireLowercase: true,
+      RequireUppercase: true,
+      RequireNumbers: true,
+      RequireSymbols: true,
+      TemporaryPasswordValidityDays: 3
+    });
   });
 });
 
@@ -530,8 +815,8 @@ describe('removal policies', () => {
 
   it.each([
     ['StepUpAuthInfra/Cognito', 'AWS::Cognito::UserPool', 1],
-    ['StepUpAuthInfra/DynamoDb', 'AWS::DynamoDB::Table', 3],
-    ['StepUpAuthWebUi/S3', 'AWS::S3::Bucket', 1],
+    ['StepUpAuthInfra/DynamoDb', 'AWS::DynamoDB::Table', 2],
+    ['StepUpAuthWebUi/Cloudfront', 'AWS::S3::Bucket', 2],
   ])('%s %s has DeletionPolicy Delete', (stack, type, count) => {
     const resources = Object.values(templates[stack].findResources(type));
     expect(resources).toHaveLength(count);
@@ -541,54 +826,108 @@ describe('removal policies', () => {
     }
   });
 
-  it('empties the web bucket on delete', () => {
-    expect(Object.keys(templates['StepUpAuthWebUi/S3'].findResources('Custom::S3AutoDeleteObjects'))).toHaveLength(1);
+  it('creates only the session and setting tables', () => {
+    const names = Object.values(templates['StepUpAuthInfra/DynamoDb'].findResources('AWS::DynamoDB::Table'))
+      .map((t) => t.Properties.TableName).sort();
+    expect(names).toStrictEqual(['step-up-auth-session-test', 'step-up-auth-setting-test']);
+  });
+
+  it('empties both web UI buckets on delete', () => {
+    expect(Object.keys(templates['StepUpAuthWebUi/Cloudfront'].findResources('Custom::S3AutoDeleteObjects'))).toHaveLength(2);
   });
 });
 
 // ----------------------------------------
-//   private web bucket and HTTPS-only CloudFront
+//   private web bucket, origin access control, HTTPS-only CloudFront
 // ----------------------------------------
 
 describe('web UI exposure', () => {
-  let templates: Record<string, Template>;
-  beforeAll(() => { templates = synth(); });
-
-  it('blocks all public access on the web bucket', () => {
-    const [bucket] = Object.values(templates['StepUpAuthWebUi/S3'].findResources('AWS::S3::Bucket'));
-    expect(bucket.Properties.PublicAccessBlockConfiguration).toStrictEqual({
-      BlockPublicAcls: true,
-      BlockPublicPolicy: true,
-      IgnorePublicAcls: true,
-      RestrictPublicBuckets: true,
-    });
-    expect(bucket.Properties.OwnershipControls).toStrictEqual({ Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] });
-    expect(bucket.Properties.BucketEncryption).toBeDefined();
+  let template: Template;
+  let webBucketId: string;
+  let logBucketId: string;
+  let distributionId: string;
+  beforeAll(() => {
+    template = synth()['StepUpAuthWebUi/Cloudfront'];
+    const buckets = Object.entries(template.findResources('AWS::S3::Bucket'));
+    webBucketId = buckets.find(([, b]) => b.Properties.BucketName)![0];
+    logBucketId = buckets.find(([, b]) => !b.Properties.BucketName)![0];
+    distributionId = Object.keys(template.findResources('AWS::CloudFront::Distribution'))[0];
   });
 
-  it('allows no anonymous principal and denies non-TLS requests', () => {
-    const statements = allStatements(templates, ['AWS::S3::BucketPolicy']);
-    for (const statement of statements.filter((s) => s.Effect === 'Allow')) {
-      expect(statement.Principal).not.toBe('*');
-      expect(JSON.stringify(statement.Principal)).not.toMatch(/"AWS":"\*"/);
+  /** statements of the bucket policy of `bucketId` */
+  const bucketStatements = (bucketId: string): Statement[] => {
+    const [policy] = Object.values(template.findResources('AWS::S3::BucketPolicy'))
+      .filter((p) => JSON.stringify(p.Properties.Bucket) === JSON.stringify({ Ref: bucketId }));
+    return policy.Properties.PolicyDocument.Statement;
+  };
+
+  it('blocks all public access and encrypts both buckets', () => {
+    for (const bucketId of [webBucketId, logBucketId]) {
+      const bucket = template.toJSON().Resources[bucketId];
+      expect(bucket.Properties.PublicAccessBlockConfiguration).toStrictEqual({
+        BlockPublicAcls: true,
+        BlockPublicPolicy: true,
+        IgnorePublicAcls: true,
+        RestrictPublicBuckets: true,
+      });
+      expect(bucket.Properties.BucketEncryption).toBeDefined();
+      expect(bucket.Properties.LifecycleConfiguration.Rules.length).toBeGreaterThan(0);
     }
-    expect(statements).toContainEqual(expect.objectContaining({
-      Effect: 'Deny',
-      Condition: { Bool: { 'aws:SecureTransport': 'false' } },
-    }));
-    // CloudFront reads through the origin access identity only
-    const reads = statements.filter((s) => s.Effect === 'Allow' && asArray(s.Action).includes('s3:GetObject'));
-    expect(reads).toHaveLength(1);
-    expect(JSON.stringify(reads[0].Principal)).toContain('CanonicalUser');
+    const web = template.toJSON().Resources[webBucketId];
+    expect(web.Properties.OwnershipControls).toStrictEqual({ Rules: [{ ObjectOwnership: 'BucketOwnerEnforced' }] });
+    expect(web.Properties.LoggingConfiguration).toStrictEqual({
+      DestinationBucketName: { Ref: logBucketId },
+      LogFilePrefix: 'web-bucket/'
+    });
+    // access logs expire after 30 days
+    const log = template.toJSON().Resources[logBucketId];
+    expect(log.Properties.LifecycleConfiguration.Rules[0].ExpirationInDays).toBe(30);
   });
 
-  it('serves the distribution over HTTPS only, from the bucket through an OAI', () => {
-    const cloudfrontTemplate = templates['StepUpAuthWebUi/Cloudfront'];
-    const [distribution] = Object.values(cloudfrontTemplate.findResources('AWS::CloudFront::Distribution'));
+  it('allows no anonymous principal and denies non-TLS requests on both buckets', () => {
+    for (const bucketId of [webBucketId, logBucketId]) {
+      const statements = bucketStatements(bucketId);
+      for (const statement of statements.filter((s) => s.Effect === 'Allow')) {
+        expect(statement.Principal).not.toBe('*');
+        expect(JSON.stringify(statement.Principal)).not.toMatch(/"AWS":"\*"/);
+      }
+      expect(statements).toContainEqual(expect.objectContaining({
+        Effect: 'Deny',
+        Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+      }));
+    }
+  });
+
+  it('lets only this distribution read the web bucket, through an origin access control', () => {
+    const reads = bucketStatements(webBucketId).filter((s) => s.Effect === 'Allow' && asArray(s.Action).includes('s3:GetObject'));
+    expect(reads).toHaveLength(1);
+    expect(reads[0].Principal).toStrictEqual({ Service: 'cloudfront.amazonaws.com' });
+    expect(JSON.stringify(reads[0].Condition)).toContain('"AWS:SourceArn"');
+    expect(JSON.stringify(reads[0].Condition)).toContain(`{"Ref":"${distributionId}"}`);
+    expect(JSON.stringify(template.toJSON())).not.toContain('CanonicalUser');
+    expect(Object.keys(template.findResources('AWS::CloudFront::CloudFrontOriginAccessIdentity'))).toHaveLength(0);
+
+    const [distribution] = Object.values(template.findResources('AWS::CloudFront::Distribution'));
+    const config = distribution.Properties.DistributionConfig;
+    expect(config.Origins).toHaveLength(1);
+    expect(config.Origins[0].OriginAccessControlId).toBeDefined();
+    expect(config.Origins[0].S3OriginConfig.OriginAccessIdentity).toBe('');
+  });
+
+  it('serves the distribution over HTTPS only, with security headers and access logging', () => {
+    const [distribution] = Object.values(template.findResources('AWS::CloudFront::Distribution'));
     const config = distribution.Properties.DistributionConfig;
     expect(config.DefaultCacheBehavior.ViewerProtocolPolicy).toBe('redirect-to-https');
-    expect(config.Origins).toHaveLength(1);
-    expect(JSON.stringify(config.Origins[0].S3OriginConfig.OriginAccessIdentity)).toContain('origin-access-identity/cloudfront/');
-    expect(config.Origins[0].OriginAccessControlId).toBeUndefined();
+    expect(config.Logging).toStrictEqual({
+      Bucket: { 'Fn::GetAtt': [logBucketId, 'RegionalDomainName'] },
+      Prefix: 'cloudfront/'
+    });
+
+    const policyId = config.DefaultCacheBehavior.ResponseHeadersPolicyId.Ref;
+    const headers = template.toJSON().Resources[policyId].Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig;
+    expect(headers.FrameOptions).toStrictEqual({ FrameOption: 'DENY', Override: true });
+    expect(headers.ContentSecurityPolicy).toStrictEqual({ ContentSecurityPolicy: "frame-ancestors 'none'", Override: true });
+    expect(headers.StrictTransportSecurity).toStrictEqual({ AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true });
+    expect(headers.ContentTypeOptions).toStrictEqual({ Override: true });
   });
 });

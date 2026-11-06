@@ -5,11 +5,21 @@ import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Asset } from 'aws-cdk-lib/aws-s3-assets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+
+import { createFunctionRole, LOG_RETENTION } from './function-role';
+
+/** name of the only API stage */
+const STAGE_NAME = 'dev';
+/** stage-wide throttling: steady-state requests per second, and burst */
+const THROTTLING_RATE_LIMIT = 10;
+const THROTTLING_BURST_LIMIT = 20;
 
 export interface ApiGatewayProps extends cdk.StackProps {
   readonly environmentPrefix?: string;
@@ -17,14 +27,15 @@ export interface ApiGatewayProps extends cdk.StackProps {
   readonly stepUpInitiateFunc: lambda.Function;
   readonly stepUpChallengeFunc: lambda.Function;
   readonly stepUpSampleApiFunc: lambda.Function;
-  readonly lambdaExecutionRole: iam.Role;
   /** step-up session lifetime in seconds (SESSION_TABLE_ITEM_TTL) */
   readonly sessionTableItemTtl: number;
   readonly cognitoUserPool: cognito.UserPool;
   readonly cognitoUserPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
-  readonly apigatewayLambdaAuthorizerRole: iam.Role;
-  readonly apigatewayExecutionRole: iam.Role;
+  /** step-up session table, read and written by the authorizer */
+  readonly sessionTable: dynamodb.ITable;
+  /** api step-up setting table, read by the authorizer */
+  readonly settingTable: dynamodb.ITable;
   /**
    * Root folder that holds the Lambda projects (<assetRoot>/<project>/build/compressed/*.zip).
    * @default path.join(__dirname, '..', '..', '..', 'source')
@@ -52,6 +63,19 @@ export class ApiGatewayStack extends cdk.Stack {
     // ----------------------------------------
     //  step-up-auth-authorizer request authorizer
     // ----------------------------------------
+    // own role: write its log group, read the api setting (GetItem), and read and write the caller's
+    // step-up session (GetItem, PutItem)
+    const authorizer = createFunctionRole(this, 'step-up-auth-authorizer');
+    authorizer.role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:GetItem'],
+      resources: [props.settingTable.tableArn]
+    }));
+    authorizer.role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem'],
+      resources: [props.sessionTable.tableArn]
+    }));
     // create file assets and upload to S3 as-is
     const stepUpAuthorizerAsset = new Asset(this, 'step-up-auth-authorizer-asset', {
       path: path.join(assetRoot, 'step-up-authorizer', 'build', 'compressed', 'step-up-auth-authorizer-lambda.zip')
@@ -63,7 +87,8 @@ export class ApiGatewayStack extends cdk.Stack {
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
-      role: props.lambdaExecutionRole,
+      role: authorizer.role,
+      logGroup: authorizer.logGroup,
       environment: {
         COGNITO_ISSUER: props.cognitoIssuer,
         COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
@@ -73,24 +98,68 @@ export class ApiGatewayStack extends cdk.Stack {
         NODE_ENV: props.nodeEnvironment || ''
       }
     });
+    // no assumeRole: API Gateway invokes the authorizer through a Lambda permission that CDK scopes
+    // (aws:SourceArn) to this authorizer of this API, so no IAM role trusts apigateway.amazonaws.com
     const requestAuthorizer = new apigateway.RequestAuthorizer(this, 'step-up-authorizer', {
       identitySources: [apigateway.IdentitySource.header('Authorization')],
       handler: stepUpAuthorizerFunc,
-      assumeRole: props.apigatewayLambdaAuthorizerRole,
       resultsCacheTtl: cdk.Duration.seconds(0)
     });
 
     // ----------------------------------------
     //      step-up-auth api
     // ----------------------------------------
+    // Regional endpoint with the TLS_1_2 security policy (TLS 1.2 and 1.3 only; a new regional REST API
+    // otherwise gets TLS_1_0).  The RestApi construct doesn't expose the property, so it is set on the
+    // CloudFormation resource below.
+    // cloudWatchRole stays false (cdk.json disables it by default): the stage's CloudWatch logging uses
+    // the account's existing API Gateway CloudWatch Logs role, which is one setting per account and
+    // region, so the sample doesn't create or replace it (deploy.sh checks that it is set).
     this.api = new apigateway.RestApi(this, 'step-up-auth-api', {
       restApiName: "step-up-auth",
       description: "This API provides reference implementation step-up auth",
+      endpointConfiguration: {
+        types: [apigateway.EndpointType.REGIONAL]
+      },
+      cloudWatchRole: false,
       deploy: false
+    });
+    (this.api.node.defaultChild as apigateway.CfnRestApi).securityPolicy = 'TLS_1_2';
+
+    // request validation for the only method with a request body: POST /respond-to-challenge takes a
+    // JSON object whose optional challengeId is the 32-character hex id minted by /initiate-auth.  A
+    // body that isn't such an object is rejected with 400 before the function runs; a missing
+    // challengeId still reaches the function, which answers 401 NO_CHALLENGE.
+    const requestValidator = this.api.addRequestValidator('request-validator', {
+      validateRequestBody: true,
+      validateRequestParameters: true
+    });
+    const respondToChallengeModel = this.api.addModel('respond-to-challenge-model', {
+      contentType: 'application/json',
+      modelName: 'RespondToChallengeRequest',
+      schema: {
+        schema: apigateway.JsonSchemaVersion.DRAFT4,
+        title: 'RespondToChallengeRequest',
+        type: apigateway.JsonSchemaType.OBJECT,
+        properties: {
+          challengeId: {
+            type: apigateway.JsonSchemaType.STRING,
+            pattern: '^[0-9a-f]{32}$'
+          }
+        }
+      }
     });
 
     // add default gateway responses
     this.getDefaultGatewayResponses(this.api);
+
+    // Every method runs behind an authorizer: the Lambda request authorizer (access token and step-up
+    // session) for GET /info and POST /transfer, the Cognito user pool authorizer (ID token) for
+    // POST /initiate-auth and POST /respond-to-challenge.  Only the CORS preflight OPTIONS methods
+    // (addCorsPreflight) are unauthenticated, because browsers send preflights without credentials;
+    // they use a mock integration that returns the CORS headers and invoke no function.
+    // The Lambda integrations use no credentials role: API Gateway invokes each function through a
+    // Lambda permission that CDK scopes (aws:SourceArn) to that method of this API.
 
     // info resource
     const info = this.api.root.addResource('info', {
@@ -102,8 +171,7 @@ export class ApiGatewayStack extends cdk.Stack {
     info.addCorsPreflight(this.getCorsOptions());
     const infoIntegration =
       new apigateway.LambdaIntegration(props.stepUpSampleApiFunc, {
-        proxy: true,
-        credentialsRole: props.apigatewayExecutionRole
+        proxy: true
       });
     info.addMethod("GET", infoIntegration, {
       authorizationType: apigateway.AuthorizationType.CUSTOM,
@@ -116,8 +184,7 @@ export class ApiGatewayStack extends cdk.Stack {
     initiateAuth.addCorsPreflight(this.getCorsOptions());
     const initiateAuthIntegration =
       new apigateway.LambdaIntegration(props.stepUpInitiateFunc, {
-        proxy: true,
-        credentialsRole: props.apigatewayExecutionRole
+        proxy: true
       });
     initiateAuth.addMethod("POST", initiateAuthIntegration, {
       authorizationType: apigateway.AuthorizationType.COGNITO,
@@ -130,12 +197,15 @@ export class ApiGatewayStack extends cdk.Stack {
     respondToChallenge.addCorsPreflight(this.getCorsOptions());
     const respondToChallengeIntegration =
       new apigateway.LambdaIntegration(props.stepUpChallengeFunc, {
-        proxy: true,
-        credentialsRole: props.apigatewayExecutionRole
+        proxy: true
       });
     respondToChallenge.addMethod("POST", respondToChallengeIntegration, {
       authorizationType: apigateway.AuthorizationType.COGNITO,
       authorizer: cognitoAuthorizer,
+      requestValidator: requestValidator,
+      requestModels: {
+        'application/json': respondToChallengeModel
+      },
       methodResponses: this.getDefaultMethodResponses()
     });
 
@@ -144,8 +214,7 @@ export class ApiGatewayStack extends cdk.Stack {
     transfer.addCorsPreflight(this.getCorsOptions());
     const transferIntegration =
       new apigateway.LambdaIntegration(props.stepUpSampleApiFunc, {
-        proxy: true,
-        credentialsRole: props.apigatewayExecutionRole
+        proxy: true
       });
     transfer.addMethod("POST", transferIntegration, {
       authorizationType: apigateway.AuthorizationType.CUSTOM,
@@ -159,10 +228,43 @@ export class ApiGatewayStack extends cdk.Stack {
     const devDeploy = new apigateway.Deployment(this, 'dev-deploy', {
       api: this.api,
     });
+    // access log: one JSON line per request (no headers or bodies, so no tokens)
+    const accessLogGroup = new logs.LogGroup(this, 'access-log-group', {
+      retention: LOG_RETENTION,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
+    // execution log: API Gateway writes it to a log group with this fixed name.  Declaring the group
+    // here gives it a retention and removes it with the stack (otherwise API Gateway creates it with
+    // no expiry and it outlives the stack).
+    const executionLogGroup = new logs.LogGroup(this, 'execution-log-group', {
+      logGroupName: `API-Gateway-Execution-Logs_${this.api.restApiId}/${STAGE_NAME}`,
+      retention: LOG_RETENTION,
+      removalPolicy: cdk.RemovalPolicy.DESTROY
+    });
     const devStage = new apigateway.Stage(this, 'dev', {
       deployment: devDeploy,
-      stageName: 'dev'
+      stageName: STAGE_NAME,
+      accessLogDestination: new apigateway.LogGroupLogDestination(accessLogGroup),
+      accessLogFormat: apigateway.AccessLogFormat.jsonWithStandardFields({
+        caller: true,
+        httpMethod: true,
+        ip: true,
+        protocol: true,
+        requestTime: true,
+        resourcePath: true,
+        responseLength: true,
+        status: true,
+        user: true
+      }),
+      // execution logging for every method at ERROR level; data tracing (full requests and responses,
+      // which would include the tokens) stays off
+      loggingLevel: apigateway.MethodLoggingLevel.ERROR,
+      dataTraceEnabled: false,
+      // stage-wide throttling for every method
+      throttlingRateLimit: THROTTLING_RATE_LIMIT,
+      throttlingBurstLimit: THROTTLING_BURST_LIMIT
     });
+    devStage.node.addDependency(executionLogGroup);
     this.apiUrl = devStage.urlForPath();
 
     // ----------------------------------------

@@ -3,7 +3,7 @@
 
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
-import * as iam from 'aws-cdk-lib/aws-iam';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 
 import { LambdaStack } from './lambda-stack';
@@ -26,9 +26,10 @@ export interface ApiProps {
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
-  readonly apigatewayLambdaAuthorizerRole: iam.Role;
-  readonly apigatewayExecutionRole: iam.Role;
-  readonly lambdaExecutionRole: iam.Role;
+  /** step-up session table (sessions and one-time challenges) */
+  readonly sessionTable: dynamodb.ITable;
+  /** api step-up setting table */
+  readonly settingTable: dynamodb.ITable;
   /**
    * Root folder that holds the Lambda projects (<assetRoot>/<project>/build/compressed/*.zip).
    * @default path.join(__dirname, '..', '..', '..', 'source')
@@ -55,7 +56,7 @@ export class Api extends Construct {
       cognitoUserPool: props.userPool,
       cognitoUserPoolClient: props.userPoolClient,
       cognitoIssuer: props.cognitoIssuer,
-      lambdaExecutionRole: props.lambdaExecutionRole,
+      sessionTable: props.sessionTable,
       assetRoot: props.assetRoot
     });
 
@@ -67,13 +68,12 @@ export class Api extends Construct {
       stepUpInitiateFunc: lambdaStack.stepUpInitiateFunc,
       stepUpChallengeFunc: lambdaStack.stepUpChallengeFunc,
       stepUpSampleApiFunc: lambdaStack.stepUpSampleApiFunc,
-      lambdaExecutionRole: props.lambdaExecutionRole,
       sessionTableItemTtl: props.sessionTableItemTtl,
       cognitoUserPool: props.userPool,
       cognitoUserPoolClient: props.userPoolClient,
       cognitoIssuer: props.cognitoIssuer,
-      apigatewayLambdaAuthorizerRole: props.apigatewayLambdaAuthorizerRole,
-      apigatewayExecutionRole: props.apigatewayExecutionRole,
+      sessionTable: props.sessionTable,
+      settingTable: props.settingTable,
       assetRoot: props.assetRoot
     });
     this.apiUrl = apiGatewayStack.apiUrl;

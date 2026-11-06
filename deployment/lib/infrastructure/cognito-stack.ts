@@ -54,6 +54,16 @@ export class CognitoStack extends cdk.Stack {
       autoVerify: {
         email: true, phone: false
       },
+      // explicit password policy: at least 14 characters with lower case, upper case, digit and symbol;
+      // an administrator-set temporary password must be changed within 3 days
+      passwordPolicy: {
+        minLength: 14,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: true,
+        tempPasswordValidity: cdk.Duration.days(3)
+      },
       // sample resources: `cdk destroy` removes the pool
       removalPolicy: cdk.RemovalPolicy.DESTROY
     });

@@ -57,6 +57,15 @@ if [ ! $? -eq 0 ]; then
   echo "Please run 'npm ci' before running the deployment"
   exit 3
 fi
+# the API stage writes its access and execution logs to CloudWatch through the account's API Gateway
+# CloudWatch Logs role.  That role is one setting per account and region, so the deployment doesn't
+# create or replace it: check that it is set
+cloudwatch_role_arn="$("${AWS_CLI_BIN}" apigateway get-account --region "${AWS_REGION}" --query cloudwatchRoleArn --output text 2> /dev/null)"
+if [ -z "${cloudwatch_role_arn}" ] || [ "${cloudwatch_role_arn}" == "None" ]; then
+  echo "API Gateway has no CloudWatch Logs role for this account in ${AWS_REGION}."
+  echo "Set it once per account and region (see 'API Gateway logging' in README.md), then run deploy.sh again."
+  exit 7
+fi
 
 #####################################################################
 # VARIABLES

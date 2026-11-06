@@ -5,9 +5,12 @@ import * as path from 'path';
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Asset } from 'aws-cdk-lib/aws-s3-assets';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import { Construct } from 'constructs';
+
+import { createFunctionRole } from './function-role';
 
 export interface LambdaProps extends cdk.StackProps {
   readonly environmentPrefix?: string;
@@ -25,7 +28,8 @@ export interface LambdaProps extends cdk.StackProps {
   readonly cognitoUserPool: cognito.UserPool;
   readonly cognitoUserPoolClient: cognito.UserPoolClient;
   readonly cognitoIssuer: string;
-  readonly lambdaExecutionRole: iam.Role;
+  /** step-up session table (sessions and one-time challenges) */
+  readonly sessionTable: dynamodb.ITable;
   /**
    * Root folder that holds the Lambda projects (<assetRoot>/<project>/build/compressed/*.zip).
    * @default path.join(__dirname, '..', '..', '..', 'source')
@@ -34,7 +38,6 @@ export interface LambdaProps extends cdk.StackProps {
 }
 
 export class LambdaStack extends cdk.Stack {
-  // public readonly stepUpAuthorizerFunc: lambda.Function;
   public readonly stepUpInitiateFunc: lambda.Function;
   public readonly stepUpChallengeFunc: lambda.Function;
   public readonly stepUpSampleApiFunc: lambda.Function;
@@ -47,6 +50,13 @@ export class LambdaStack extends cdk.Stack {
     // ----------------------------------------
     //      step-up-auth-initiate lambda
     // ----------------------------------------
+    // own role: write its log group, and write the one-time challenge row (PutItem) in the session table
+    const initiate = createFunctionRole(this, 'step-up-auth-initiate');
+    initiate.role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:PutItem'],
+      resources: [props.sessionTable.tableArn]
+    }));
     // create file assets and upload to S3 as-is
     const stepUpInitiateAsset = new Asset(this, 'step-up-auth-initiate-asset', {
       path: path.join(assetRoot, 'step-up-initiate', 'build', 'compressed', 'step-up-auth-initiate-lambda.zip')
@@ -58,7 +68,8 @@ export class LambdaStack extends cdk.Stack {
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
-      role: props.lambdaExecutionRole,
+      role: initiate.role,
+      logGroup: initiate.logGroup,
       environment: {
         // the initiate function verifies the caller's access token (aws-jwt-verify) and binds the
         // one-time challenge to the gateway-authorized subject, so it needs the pool/client identifiers
@@ -80,6 +91,20 @@ export class LambdaStack extends cdk.Stack {
     // ----------------------------------------
     //      step-up-auth-challenge lambda
     // ----------------------------------------
+    // own role: write its log group; read, consume (conditional DeleteItem) and write session table
+    // rows; and the responder's MFA check, which reads the token's user and the pool's MFA
+    // configuration on this user pool only
+    const challenge = createFunctionRole(this, 'step-up-auth-challenge');
+    challenge.role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['dynamodb:GetItem', 'dynamodb:PutItem', 'dynamodb:DeleteItem'],
+      resources: [props.sessionTable.tableArn]
+    }));
+    challenge.role.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['cognito-idp:AdminGetUser', 'cognito-idp:GetUserPoolMfaConfig'],
+      resources: [props.cognitoUserPool.userPoolArn]
+    }));
     // create file assets and upload to S3 as-is
     const stepUpChallengeAsset = new Asset(this, 'step-up-auth-challenge-asset', {
       path: path.join(assetRoot, 'step-up-challenge', 'build', 'compressed', 'step-up-auth-challenge-lambda.zip')
@@ -91,7 +116,8 @@ export class LambdaStack extends cdk.Stack {
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
-      role: props.lambdaExecutionRole,
+      role: challenge.role,
+      logGroup: challenge.logGroup,
       environment: {
         COGNITO_ISSUER: props.cognitoIssuer,
         COGNITO_USER_POOL_ARN: props.cognitoUserPool.userPoolArn,
@@ -107,21 +133,12 @@ export class LambdaStack extends cdk.Stack {
         NODE_ENV: props.nodeEnvironment || ''
       }
     });
-    // the responder's MFA check reads the token's user and the pool's MFA configuration, on this pool only.
-    // A standalone policy in this stack (not the IAM stack) avoids a cross-stack reference cycle on the pool.
-    const stepUpChallengeCognitoPolicy = new iam.Policy(this, 'StepUpAuthChallengeCognitoPolicy', {
-      roles: [props.lambdaExecutionRole],
-      statements: [new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: ['cognito-idp:AdminGetUser', 'cognito-idp:GetUserPoolMfaConfig'],
-        resources: [props.cognitoUserPool.userPoolArn]
-      })]
-    });
-    this.stepUpChallengeFunc.node.addDependency(stepUpChallengeCognitoPolicy);
 
     // ----------------------------------------
     //      step-up-auth-sample-api lambda
     // ----------------------------------------
+    // own role: write its log group only (the sample API reads no table and calls no AWS service)
+    const sampleApi = createFunctionRole(this, 'step-up-auth-sample-api');
     // create file assets and upload to S3 as-is
     const stepUpSampleApiAsset = new Asset(this, 'step-up-auth-sample-api-asset', {
       path: path.join(assetRoot, 'sample-api', 'build', 'compressed', 'step-up-auth-sample-api-lambda.zip')
@@ -133,7 +150,8 @@ export class LambdaStack extends cdk.Stack {
       handler: 'src/index.handler',
       timeout: cdk.Duration.seconds(30),
       memorySize: 512,
-      role: props.lambdaExecutionRole,
+      role: sampleApi.role,
+      logGroup: sampleApi.logGroup,
       environment: {
         ENV_PREFIX: props.environmentPrefix || '',
         NODE_ENV: props.nodeEnvironment || ''

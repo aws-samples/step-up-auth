@@ -76,12 +76,11 @@ new Api(app, "StepUpAuthApi", {
   userPool: infrastructure.cognitoUserPool,
   userPoolClient: infrastructure.cognitoUserPoolClient,
   cognitoIssuer: infrastructure.cognitoIssuer,
-  apigatewayLambdaAuthorizerRole: infrastructure.apigatewayLambdaAuthorizerRole,
-  apigatewayExecutionRole: infrastructure.apigatewayExecutionRole,
-  lambdaExecutionRole: infrastructure.lambdaExecutionRole
+  sessionTable: infrastructure.sessionTable,
+  settingTable: infrastructure.settingTable
 });
 
-// create s3 and cloudfront stacks to host sample-web-app
+// create the cloudfront stack (web bucket, access-log bucket, distribution) to host sample-web-app
 new WebUI(app, "StepUpAuthWebUi", {
   env: environment
 });
