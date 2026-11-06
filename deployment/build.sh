@@ -70,11 +70,25 @@ buildAll() {
   echo ">> preparing web-ui"
   ( cd ../source/sample-web-app && npm ci ) > /tmp/$$.web-ui.setup.log 2> /tmp/$$.web-ui.setup.log || exit 3
   # software bills of materials of the deployed code
-  sbom step-up-authorizer
-  sbom step-up-challenge
-  sbom step-up-initiate
-  sbom sample-api
+  lambdaSbom step-up-authorizer
+  lambdaSbom step-up-challenge
+  lambdaSbom step-up-initiate
+  lambdaSbom sample-api
   sbom sample-web-app
+}
+# write a CycloneDX software bill of materials of what one Lambda function ships to
+# ../source/<project>/build/sbom/<project>.cdx.json: every package installed in build/dist, the
+# content of the deployable zip, including the dependencies of the bundled auth-utils and auth-sdk
+# libraries.  build/dist/package.json still lists devDependencies that are not installed there, so
+# npm sbom reads a copy of build/dist without them.
+lambdaSbom() {
+  project_name=$1
+  sbom_tree=/tmp/$$.sbom/${project_name}
+  echo ">> writing ${project_name} SBOM"
+  ( mkdir -p /tmp/$$.sbom ../source/${project_name}/build/sbom && \
+    cp -R ../source/${project_name}/build/dist "${sbom_tree}" && \
+    ( cd "${sbom_tree}" && npm pkg delete devDependencies ) && \
+    ( cd "${sbom_tree}" && npm sbom --sbom-format cyclonedx --sbom-type application ) > ../source/${project_name}/build/sbom/${project_name}.cdx.json ) || exit 3
 }
 # write a CycloneDX software bill of materials of one project's production dependencies (from its
 # package-lock.json) to ../source/<project>/build/sbom/<project>.cdx.json
