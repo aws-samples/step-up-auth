@@ -39,6 +39,29 @@ fi
 
 
 #####################################################################
+# CHECK THE BUCKET OWNER
+# upload only to a bucket that the account of the current AWS credentials owns, so that a wrong or
+# reused bucket name can't send the web app to a bucket in another account.  `aws s3 cp` has no
+# expected-bucket-owner option, so head-bucket checks the owner first
+account_id="$("${AWS_CLI_BIN}" sts get-caller-identity --query Account --output text 2> /tmp/$$.aws.sts.log)"
+if [ $? -ne 0 ] || [ -z "${account_id}" ]; then
+    echo "Error reading the account of the current AWS credentials.  aws cli log:"
+    cat /tmp/$$.aws.sts.log
+    rm -rf /tmp/$$.*
+    exit 2
+fi
+"${AWS_CLI_BIN}" s3api head-bucket --bucket "${S3_BUCKET_NAME}" \
+    --expected-bucket-owner "${account_id}" \
+    --region "${AWS_REGION}" > /tmp/$$.aws.s3api.log 2>&1
+if [ $? -ne 0 ]; then
+    echo "Error: bucket ${S3_BUCKET_NAME} doesn't exist or isn't owned by account ${account_id}.  aws cli log:"
+    cat /tmp/$$.aws.s3api.log
+    rm -rf /tmp/$$.*
+    exit 2
+fi
+
+
+#####################################################################
 # COPY WEB-UI DEPLOYABLE ARTIFACT TO S3
 echo "Copying dist contents to Web UI S3 bucket: ${S3_BUCKET_NAME}"
 cd dist

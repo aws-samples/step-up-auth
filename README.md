@@ -266,7 +266,7 @@ Finally, trigger the stack deploying:
 cd deployment && ./deploy.sh
 ```
 
-`deploy.sh` checks the API Gateway CloudWatch Logs role, then runs an incremental build, `cdk bootstrap`, `cdk deploy --all` (5 CloudFormation stacks), then builds the web app with the stack outputs and uploads it to the web bucket.  The last line of the output, `Sample Web App URL: <domain>`, shows the CloudFront distribution domain name.  Open `https://<domain>` to load the sample web app.
+`deploy.sh` checks the API Gateway CloudWatch Logs role, then runs an incremental build, `cdk bootstrap`, `cdk deploy --all` (5 CloudFormation stacks), then builds the web app with the stack outputs and uploads it to the web bucket.  Before the upload it checks that the account of your AWS credentials owns the web bucket, and stops if it doesn't.  The last line of the output, `Sample Web App URL: <domain>`, shows the CloudFront distribution domain name.  Open `https://<domain>` to load the sample web app.
 
 To remove the solution, use `undeploy.sh` with the same `AWS_REGION`, `AWS_ACCOUNT`, `NODE_ENV` and `ENV_PREFIX` values (and `AWS_PROFILE` for credentials):
 
