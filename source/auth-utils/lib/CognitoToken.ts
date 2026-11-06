@@ -432,7 +432,7 @@ class CognitoToken {
       const decoded = jwtDecode<CognitoIdentityTokenPayload>(this.token);
       if (!decoded.jti) {
         // if jti claim doesn't exist then generate a unique one-way hash
-        return crypto.createHash('sha1').update(JSON.stringify(decoded)).digest('hex');
+        return crypto.createHash('sha256').update(JSON.stringify(decoded)).digest('hex');
       }
       return decoded.jti;
     } catch ( e ) {
@@ -451,7 +451,7 @@ class CognitoToken {
       const decoded = jwtDecode<CognitoAccessTokenPayload>(this.token);
       if (!decoded.jti) {
         // if jti claim doesn't exist then generate a unique one-way hash
-        return crypto.createHash('sha1').update(JSON.stringify(decoded)).digest('hex');
+        return crypto.createHash('sha256').update(JSON.stringify(decoded)).digest('hex');
       }
       return decoded.jti;
     } catch ( e ) {

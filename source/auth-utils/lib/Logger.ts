@@ -21,8 +21,13 @@ import { jwtDecode } from 'jwt-decode';
 const AWS_CREDENTIAL_ENV_KEYS = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'];
 // any other environment variable whose name matches this pattern is redacted as well
 const SENSITIVE_ENV_KEY_PATTERN = /SECRET|TOKEN|PASSWORD|CREDENTIAL/i;
-// request headers whose values are masked by sanitizeEvent()
-const SENSITIVE_HEADER_PATTERN = /^(authorization|identification)$/i;
+// request headers whose values are masked by sanitizeEvent(): the sample's token headers and the
+// standard credential headers
+const SENSITIVE_HEADER_PATTERN =
+  /^(authorization|identification|proxy-authorization|cookie|set-cookie|x-api-key|x-amz-security-token)$/i;
+// authorizer claims that sanitizeEvent() keeps (identifiers and token metadata, no personal data).
+// Everything else in requestContext.authorizer.claims (e.g. email, phone_number) is dropped
+const AUTHORIZER_CLAIMS_KEPT = ['sub', 'cognito:username', 'token_use', 'aud', 'iss', 'exp', 'iat', 'auth_time'];
 // a signed JWT (header.payload.signature) anywhere in a string
 const JWT_PATTERN = /eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*/g;
 // a string that is exactly one JWT
@@ -325,9 +330,14 @@ class Logger {
   }
 
   /**
-   * Return a deep copy of an API Gateway / Lambda event that is safe to log.  In `headers` and
-   * `multiValueHeaders`, values of the Authorization and Identification headers (any case) are
-   * masked: `Bearer <jwt>` becomes `Bearer <jwt {summary}>`, anything else becomes `<masked>`.
+   * Return a deep copy of an API Gateway / Lambda event that is safe to log:
+   * - in `headers` and `multiValueHeaders`, the values of the Authorization, Identification,
+   *   Proxy-Authorization, Cookie, Set-Cookie, X-Api-Key and X-Amz-Security-Token headers (any case)
+   *   are masked: `Bearer <jwt>` becomes `Bearer <jwt {summary}>`, anything else becomes `<masked>`;
+   * - `requestContext.authorizer.claims` (the claims of the token an API Gateway authorizer verified)
+   *   keeps only sub, cognito:username, token_use, aud, iss, exp, iat and auth_time, so personal data
+   *   such as email and phone_number is not logged;
+   * - a non-empty `body` becomes `<masked>`.
    * The input event is not modified.  Returns an unmasked copy when isRawSecretsAllowed() is true.
    * @param {T} event event object
    * @returns {T} sanitized copy of the event
@@ -366,6 +376,30 @@ class Logger {
         });
       }
     });
+
+    // claims of the token verified by an API Gateway authorizer: keep identifiers, drop personal data
+    const requestContext = sanitized.requestContext as Record<string, unknown> | undefined;
+    const authorizer = requestContext && typeof requestContext === 'object'
+      ? requestContext.authorizer as Record<string, unknown> | undefined
+      : undefined;
+    if (authorizer && typeof authorizer === 'object' && authorizer.claims !== undefined && authorizer.claims !== null) {
+      const claims = authorizer.claims;
+      const kept: Record<string, unknown> = {};
+      if (typeof claims === 'object') {
+        AUTHORIZER_CLAIMS_KEPT.forEach((claim) => {
+          const value = (claims as Record<string, unknown>)[claim];
+          if (value !== undefined) {
+            kept[claim] = value;
+          }
+        });
+      }
+      authorizer.claims = kept;
+    }
+
+    // request body: may carry user input
+    if (typeof sanitized.body === 'string' && sanitized.body.length > 0) {
+      sanitized.body = MASKED;
+    }
     return sanitized as T;
   }
 

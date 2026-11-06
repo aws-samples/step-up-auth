@@ -64,7 +64,8 @@ describe('Test Suite for config', () => {
 describe('Logger redaction', () => {
   const originalEnv = { ...process.env };
   const testEnv: NodeJS.ProcessEnv = {
-    AWS_ACCESS_KEY_ID: 'AKIATESTACCESSKEY01',
+    // the documented AWS example access key id (not a real key)
+    AWS_ACCESS_KEY_ID: 'AKIAIOSFODNN7EXAMPLE',
     AWS_SECRET_ACCESS_KEY: 'test-secret-access-key-value',
     AWS_SESSION_TOKEN: 'test-session-token-value',
     MY_PASSWORD: 'hunter2',
@@ -175,5 +176,59 @@ describe('Logger redaction', () => {
   it('masks a non-JWT bearer value', () => {
     const sanitized = Logger.sanitizeEvent({ headers: { authorization: 'Bearer opaque-value' } });
     expect(sanitized.headers.authorization).toBe('<masked>');
+  });
+
+  it.each(['Cookie', 'set-cookie', 'X-Api-Key', 'x-amz-security-token', 'Proxy-Authorization'])(
+    'masks the %s header in headers and multiValueHeaders', (name) => {
+      const sanitized = Logger.sanitizeEvent({
+        headers: { [name]: 'credential-value', Accept: '*/*' },
+        multiValueHeaders: { [name]: ['credential-value'], Accept: ['*/*'] }
+      });
+      expect(JSON.stringify(sanitized)).not.toContain('credential-value');
+      expect(sanitized.headers[name]).toBe('<masked>');
+      expect(sanitized.multiValueHeaders[name]).toStrictEqual(['<masked>']);
+      expect(sanitized.headers.Accept).toBe('*/*');
+    });
+
+  it('keeps only identifier claims of requestContext.authorizer.claims', () => {
+    const event = {
+      path: '/initiate-auth',
+      requestContext: {
+        requestId: 'request-1',
+        authorizer: {
+          claims: {
+            sub: 'sub-1',
+            'cognito:username': 'alice',
+            email: 'alice@example.com',
+            phone_number: '+12025550100',
+            email_verified: 'true',
+            token_use: 'id',
+            aud: 'client-1',
+            exp: '1700000000'
+          }
+        }
+      }
+    };
+    const original = JSON.parse(JSON.stringify(event));
+    const sanitized = Logger.sanitizeEvent(event);
+    expect(sanitized.requestContext.authorizer.claims).toStrictEqual({
+      sub: 'sub-1', 'cognito:username': 'alice', token_use: 'id', aud: 'client-1', exp: '1700000000'
+    });
+    const serialized = JSON.stringify(sanitized);
+    expect(serialized).not.toContain('alice@example.com');
+    expect(serialized).not.toContain('+12025550100');
+    expect(sanitized.requestContext.requestId).toBe('request-1');
+    expect(event).toStrictEqual(original);
+  });
+
+  it('replaces non-object authorizer claims with an empty object', () => {
+    const sanitized = Logger.sanitizeEvent({ requestContext: { authorizer: { claims: 'email=alice@example.com' } } });
+    expect(sanitized.requestContext.authorizer.claims).toStrictEqual({});
+  });
+
+  it('masks a non-empty request body and keeps an empty one', () => {
+    expect(Logger.sanitizeEvent({ body: '{"challengeId":"0123456789abcdef0123456789abcdef"}' }).body).toBe('<masked>');
+    expect(Logger.sanitizeEvent({ body: null }).body).toBeNull();
+    expect(Logger.sanitizeEvent({ body: '' }).body).toBe('');
   });
 });
