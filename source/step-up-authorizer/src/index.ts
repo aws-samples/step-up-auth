@@ -24,7 +24,7 @@ const log = new Logger(fileName);
  */
 export const handler = async (event: APIGatewayRequestAuthorizerEvent | APIGatewayTokenAuthorizerEvent, context: Context): Promise<APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>> => {
   log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
-  log.debug('context: ', JSON.stringify(context));
+  log.debug('request id: ', context?.awsRequestId);
 
   // capture authorizer type and methodArn
   const methodArn = event.methodArn;

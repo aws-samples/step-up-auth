@@ -36,9 +36,13 @@ const RESPONSE_CONTEXT = {
   [AuthClaimEnum.SESSION_ID_CLAIM]: ''
 };
 
+// an event for the API Gateway resource `path` (resource, resourcePath and request path all equal)
 const authorizerEvent = (path: string): APIGatewayRequestAuthorizerEvent => {
   const event: APIGatewayRequestAuthorizerEvent = JSON.parse(JSON.stringify(mocks.requestAuthorizerEvent));
   event.path = path;
+  event.resource = path;
+  event.requestContext.resourcePath = path;
+  event.requestContext.path = `/dev${path}`;
   event.headers = { ...event.headers, Authorization: `Bearer ${ACCESS_TOKEN}` };
   return event;
 };
@@ -225,6 +229,72 @@ describe('RequestAuthorizer', () => {
 
       expect(response.policyDocument.Statement[0].Effect).toBe('Deny');
       expectSessionTableUntouched();
+    });
+  });
+
+  describe('setting lookup key', () => {
+    const generateFor = (event: APIGatewayRequestAuthorizerEvent) =>
+      new RequestAuthorizer(event, mocks.requestAuthorizerEvent.methodArn).generateResponseForEvent();
+
+    it('looks up the API Gateway resource path, not the raw request path', async () => {
+      const event = authorizerEvent('/transfer');
+      event.path = '/transfer/';
+      getSessionSpy.mockResolvedValue(session(StepUpStatusEnum.STEP_UP_COMPLETED, nowInSeconds() + 300));
+
+      const response = await generateFor(event);
+
+      expect(getStepUpStatusSpy).toHaveBeenCalledTimes(1);
+      expect(getStepUpStatusSpy).toHaveBeenCalledWith('/transfer');
+      expect(response.policyDocument.Statement[0].Effect).toBe('Allow');
+    });
+
+    it('falls back to requestContext.resourcePath when the event has no resource', async () => {
+      const event = authorizerEvent('/transfer');
+      delete (event as { resource?: string }).resource;
+      getSessionSpy.mockResolvedValue(session(StepUpStatusEnum.STEP_UP_COMPLETED, nowInSeconds() + 300));
+
+      await generateFor(event);
+
+      expect(getStepUpStatusSpy).toHaveBeenCalledWith('/transfer');
+    });
+
+    it('denies (403) without reading the setting when the event has no resource path', async () => {
+      const event = authorizerEvent('/transfer');
+      delete (event as { resource?: string }).resource;
+      delete (event.requestContext as { resourcePath?: string }).resourcePath;
+
+      const response = await generateFor(event);
+
+      expect(response.policyDocument.Statement[0].Effect).toBe('Deny');
+      expect(getStepUpStatusSpy).not.toHaveBeenCalled();
+      expectSessionTableUntouched();
+    });
+  });
+
+  describe('new STEP_UP_REQUIRED session', () => {
+    it('denies (403) instead of failing when the session cannot be written', async () => {
+      createSessionSpy.mockRejectedValue(new Error('error occurred during put item operation - AccessDeniedException'));
+
+      const response = await generate();
+
+      expect(createSessionSpy).toHaveBeenCalledTimes(1);
+      expect(response.policyDocument.Statement[0].Effect).toBe('Deny');
+      expect(response.context).toEqual(RESPONSE_CONTEXT);
+    });
+
+    it.each([
+      ['X-Forwarded-Proto'],
+      ['x-forwarded-proto'],
+    ])('builds the referrer URL from the %s header, whatever its case', async (headerName) => {
+      const event = authorizerEvent('/transfer');
+      delete (event.headers as Record<string, string | undefined>)['X-Forwarded-Proto'];
+      event.headers = { ...event.headers, [headerName]: 'https' };
+
+      await expect(new RequestAuthorizer(event, mocks.requestAuthorizerEvent.methodArn).generateResponseForEvent())
+        .rejects.toThrow('Unauthorized');
+
+      expect(createSessionSpy).toHaveBeenCalledWith(JTI, USERNAME, CLIENT_ID, undefined,
+        `https://${event.requestContext.domainName}/dev/transfer`, StepUpStatusEnum.STEP_UP_REQUIRED, TOKEN_EXP);
     });
   });
 

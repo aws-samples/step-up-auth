@@ -80,7 +80,7 @@ export const handler = async (
   context: Context
 ): Promise<APIGatewayProxyResult> => {
   log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
-  log.debug('context ', JSON.stringify(context));
+  log.debug('request id: ', context?.awsRequestId);
 
   if (event.path === '/initiate-auth' && event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: BASE_HEADERS, body: '{}' };

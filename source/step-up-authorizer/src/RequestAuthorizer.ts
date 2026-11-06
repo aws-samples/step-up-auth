@@ -31,6 +31,7 @@ const log = new Logger(fileName);
  */
 class RequestAuthorizer extends Authorizer {
   private event: APIGatewayRequestAuthorizerEvent;
+  private headers: APIGatewayRequestAuthorizerEventHeaders; // request headers with lowercase names
   private authorizationHeader: string;
   private idTokenHeader: string;
   private clientId: string; // used when generating sessionId
@@ -46,6 +47,7 @@ class RequestAuthorizer extends Authorizer {
     super(resource, principalId);
 
     this.event = event;
+    this.headers = {};
     this.clientId = '';
     this.tokenExp = 0;
     this.idTokenHeader = TokenHeaderValueEnum.ID_TOKEN_HEADER_VALUE;
@@ -69,19 +71,20 @@ class RequestAuthorizer extends Authorizer {
    * @returns {APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>} API Gateway request authorizer response
    */
   public async generateResponseForEvent(): Promise<APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>> {
-    let headers = this.event.headers;
-
-    // convert header's keys to lowercase.  API Gateway converts headers keys to small-case
-    if (headers) {
-      headers = Object.keys(headers)
+    // convert header names to lowercase (HTTP header names are case-insensitive, and clients send them
+    // in either case).  every header read below uses this map
+    const eventHeaders = this.event.headers;
+    if (eventHeaders) {
+      this.headers = Object.keys(eventHeaders)
         .reduce((updatedHeaders: APIGatewayRequestAuthorizerEventHeaders, key: string) => {
-          updatedHeaders[key.toLowerCase()] = headers![key];
+          updatedHeaders[key.toLowerCase()] = eventHeaders[key];
           return updatedHeaders;
         }, {});
     }
+    const headers = this.headers;
 
     // if headers is empty or authorization header is not set, return
-    if (!headers || !headers[this.authorizationHeader]) {
+    if (!eventHeaders || !headers[this.authorizationHeader]) {
       log.warn(`invalid access token or ${this.authorizationHeader} header not set`);
       // raising a runtime error with "Unauthorized" message signals Lambda Request Authorizer
       // to return HTTP 401 return code
@@ -122,6 +125,15 @@ class RequestAuthorizer extends Authorizer {
     // extract token expiry.  a new session's ttl never exceeds it
     this.tokenExp = accessToken.getExpClaim();
 
+    // the api setting is keyed by the API Gateway resource path of the method being authorized (for
+    // example /transfer), not by the raw request path, so a variant of the request path can never miss
+    // the setting row.  without a resource path, deny
+    const api = this.getResourcePath();
+    if (!api) {
+      log.warn('request has no API Gateway resource path.  denying access');
+      return this.generateDenyResponse();
+    }
+
     // the api setting decides first, so that STEP_UP_DENY applies even when the
     // caller has a completed step-up session
     // - STEP_UP_DENY: return deny policy (403)
@@ -131,12 +143,12 @@ class RequestAuthorizer extends Authorizer {
     let stepUpState: StepUpStateEnum;
     try {
       const settingClient = new SettingClient();
-      stepUpState = await settingClient.getStepUpStatus(this.event.path);
+      stepUpState = await settingClient.getStepUpStatus(api);
     } catch ( e: any ) {
-      log.error(`unable to read setting for api '${this.event.path}'.  denying access.  error: ${e.message}`);
+      log.error(`unable to read setting for api '${api}'.  denying access.  error: ${e.message}`);
       return this.generateDenyResponse();
     }
-    log.debug(`api ${this.event.path} step-up state: ${stepUpState}`);
+    log.debug(`api ${api} step-up state: ${stepUpState}`);
 
     switch (stepUpState) {
       case StepUpStateEnum.STEP_UP_NOT_REQUIRED:
@@ -158,7 +170,7 @@ class RequestAuthorizer extends Authorizer {
    * - a STEP_UP_COMPLETED session whose ttl is in the future: return allow policy
    * - no session, an expired or missing ttl, or any other step-up status: create a new
    *   STEP_UP_REQUIRED session and return 401
-   * - session can't be read: return deny policy (403)
+   * - session can't be read, or the new session can't be written: return deny policy (403)
    * @param {string} sessionId session id (access token jti) to look up, and to use for a new session
    * @returns {APIGatewayAuthorizerWithContextResult<APIGatewayAuthorizerResultContext>} API Gateway request authorizer response
    */
@@ -191,8 +203,28 @@ class RequestAuthorizer extends Authorizer {
 
     // no session, an expired session or a session that has not completed step-up:
     // create a new STEP_UP_REQUIRED session and return 401
-    await this.createSession(sessionId);
+    try {
+      await this.createSession(sessionId);
+    } catch ( e: any ) {
+      // write error (e.g. DynamoDB or IAM failure): deny explicitly rather than fail with a 500
+      log.error(`unable to create step-up session '${sessionId}'.  denying access.  error: ${e.message}`);
+      return this.generateDenyResponse();
+    }
     throw new Error("Unauthorized");
+  }
+
+  /**
+   * API Gateway resource path of the method being authorized, for example `/transfer`: the `resource`
+   * of the event, else `requestContext.resourcePath`.  Unlike the request path, it is the path of the
+   * API Gateway resource whose method the allow policy (methodArn) grants.
+   * @returns {string} resource path, or empty string when the event carries none
+   */
+  private getResourcePath(): string {
+    const resource = this.stringProperty('resource', this.event);
+    if (resource.length > 0) {
+      return resource;
+    }
+    return this.stringProperty('resourcePath', this.event.requestContext);
   }
 
   /**
@@ -200,10 +232,10 @@ class RequestAuthorizer extends Authorizer {
    * @returns {string} sessionId
    */
   private async createSession(sessionId: string): Promise<string> {
-    // build referrerUrl.  we store it in session table
-    const proto = this.hasProperty('X-Forwarded-Proto', this.event.headers);
-    const domain = this.hasProperty('domainName', this.event.requestContext);
-    const path = this.hasProperty('path', this.event.requestContext);
+    // build referrerUrl.  we store it in session table.  the header is read from the lowercase map
+    const proto = this.stringProperty('x-forwarded-proto', this.headers);
+    const domain = this.stringProperty('domainName', this.event.requestContext);
+    const path = this.stringProperty('path', this.event.requestContext);
     let referrerUrl = '';
 
     if (proto.length === 0) {
@@ -223,14 +255,14 @@ class RequestAuthorizer extends Authorizer {
   }
 
   /**
-   * Return value for the key if key exists in object.  Return empty string otherwise
+   * Return the value for the key if the object has it and it is a string.  Return empty string otherwise
    * @param {string} key key
-   * @param {object} obj object
-   * @return {string} value represented by key if present, otherwise empty string
+   * @param {object} obj object, may be null or undefined
+   * @return {string} string value represented by key if present, otherwise empty string
    */
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types, @typescript-eslint/no-explicit-any
-  private hasProperty(key: string, obj: any): string {
-    if (key in obj) {
+  private stringProperty(key: string, obj: any): string {
+    if (obj && typeof obj === 'object' && typeof obj[key] === 'string') {
       return obj[key];
     }
     return '';

@@ -61,7 +61,7 @@ const bearerToken = (headerValue: string | undefined): string | undefined => {
  */
 export const handler = async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewayProxyResult> => {
   log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
-  log.debug('context ', JSON.stringify(context));
+  log.debug('request id: ', context?.awsRequestId);
 
   const result: APIGatewayProxyResult = <APIGatewayProxyResult>{};
   result.headers = BASE_HEADERS;

@@ -27,7 +27,7 @@ const BASE_HEADERS = {
  */
 export const handler = async (event: APIGatewayProxyEvent, context: Context): Promise<APIGatewaySampleProxyResult> => {
   log.debug('event: ', JSON.stringify(Logger.sanitizeEvent(event)));
-  log.debug('context ', JSON.stringify(context));
+  log.debug('request id: ', context?.awsRequestId);
 
   // perform preflight checks - guard against missing path and http method.
   // this is optional and unnecessary for bootstrap because bootstrap takes
@@ -87,7 +87,7 @@ export const handler = async (event: APIGatewayProxyEvent, context: Context): Pr
   result.headers = BASE_HEADERS;
   result.body = JSON.stringify(error);
   result.statusCode = 400;
-  console.log('returning result: ' + JSON.stringify(result));
+  log.debug('returning result: ' + JSON.stringify(result));
 
   return result;
 };
