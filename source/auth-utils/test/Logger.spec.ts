@@ -123,6 +123,14 @@ describe('Logger redaction', () => {
     expect(description.AWS_LAMBDA_FUNCTION_NAME).toBe('step-up-auth-function');
   });
 
+  it('redacts the node-config variables that can carry a configuration, and shows the others', () => {
+    expect(Logger.redactEnvValue('NODE_CONFIG', '{"db":{"password":"made-up"}}')).toBe('<redacted>');
+    expect(Logger.redactEnvValue('NODE_CONFIG_PARSER', '/opt/made-up-parser.js')).toBe('<redacted>');
+    expect(Logger.redactEnvValue('NODE_ENV', 'production')).toBe('production');
+    expect(Logger.redactEnvValue('NODE_CONFIG_DIR', '/var/task/config')).toBe('/var/task/config');
+    expect(Logger.redactEnvValue('NODE_CONFIG', undefined)).toBeUndefined();
+  });
+
   it('logs raw values when LOG_RAW_SECRETS=true outside Lambda', () => {
     process.env.LOG_RAW_SECRETS = 'true';
     expect(Logger.isRawSecretsAllowed()).toBe(true);

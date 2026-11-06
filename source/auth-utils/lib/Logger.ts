@@ -29,7 +29,14 @@ const LOGGED_ENV_KEYS = [
   'AWS_REGION', 'AWS_DEFAULT_REGION', 'AWS_EXECUTION_ENV', 'AWS_LAMBDA_FUNCTION_NAME',
   'AWS_LAMBDA_FUNCTION_VERSION', 'AWS_LAMBDA_FUNCTION_MEMORY_SIZE', 'AWS_LAMBDA_LOG_GROUP_NAME',
   'AWS_LAMBDA_LOG_STREAM_NAME', 'AWS_LAMBDA_INITIALIZATION_TYPE', 'LAMBDA_TASK_ROOT', 'LAMBDA_RUNTIME_DIR',
-  '_HANDLER', 'TZ', 'LANG', 'PATH', 'LD_LIBRARY_PATH'
+  '_HANDLER', 'TZ', 'LANG', 'PATH', 'LD_LIBRARY_PATH',
+  'NODE_ENV', 'NODE_CONFIG_ENV', 'NODE_CONFIG_DIR', 'NODE_APP_INSTANCE', 'ALLOW_CONFIG_MUTATIONS',
+  'SUPPRESS_NO_CONFIG_WARNING'
+];
+// node-config variables that the constructor logs first, in this order (describeEnvironment() leaves them out)
+const NODE_CONFIG_ENV_KEYS = [
+  'NODE_ENV', 'NODE_CONFIG_ENV', 'NODE_CONFIG_DIR', 'NODE_CONFIG', 'NODE_APP_INSTANCE', 'NODE_CONFIG_PARSER',
+  'ALLOW_CONFIG_MUTATIONS', 'SUPPRESS_NO_CONFIG_WARNING'
 ];
 // request headers whose values are masked by sanitizeEvent(): the sample's token headers and the
 // standard credential headers
@@ -115,16 +122,13 @@ class Logger {
       exitOnError: false
     });
 
-    // display some runtime configuration information
+    // display some runtime configuration information.  These values go through the same redaction as
+    // every other variable: NODE_CONFIG and NODE_CONFIG_PARSER can carry a whole configuration, so they
+    // are not in LOGGED_ENV_KEYS and are shown as <redacted> when set
     this.logger.debug('Node Environment:');
-    this.logger.debug(`NODE_ENV: ${process.env.NODE_ENV}`);
-    this.logger.debug(`NODE_CONFIG_ENV: ${process.env.NODE_CONFIG_ENV}`);
-    this.logger.debug(`NODE_CONFIG_DIR: ${process.env.NODE_CONFIG_DIR}`);
-    this.logger.debug(`NODE_CONFIG: ${process.env.NODE_CONFIG}`);
-    this.logger.debug(`NODE_APP_INSTANCE: ${process.env.NODE_APP_INSTANCE}`);
-    this.logger.debug(`NODE_CONFIG_PARSER: ${process.env.NODE_CONFIG_PARSER}`);
-    this.logger.debug(`ALLOW_CONFIG_MUTATIONS: ${process.env.ALLOW_CONFIG_MUTATIONS}`);
-    this.logger.debug(`SUPPRESS_NO_CONFIG_WARNING: ${process.env.SUPPRESS_NO_CONFIG_WARNING}`);
+    NODE_CONFIG_ENV_KEYS.forEach((key) => {
+      this.logger.debug(Logger.redactText(`${key}: ${Logger.redactEnvValue(key, process.env[key])}`));
+    });
 
     // display remaining environment variables (only the values of known non-secret variables are shown)
     const environment = Logger.describeEnvironment(process.env);
