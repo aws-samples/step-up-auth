@@ -207,6 +207,15 @@ describe('Logger redaction', () => {
     const sanitized = Logger.sanitizeEvent({ headers: { authorization: 'Bearer opaque-value' } });
     expect(sanitized.headers.authorization).toBe('<masked>');
   });
+  it('masks the authorizationToken of a TOKEN authorizer event', () => {
+    const event = { type: 'TOKEN', authorizationToken: 'opaque-token-value', methodArn: 'example-method-arn' };
+    const sanitized = Logger.sanitizeEvent(event);
+    expect(JSON.stringify(sanitized)).not.toContain('opaque-token-value');
+    expect(sanitized.authorizationToken).toBe('<masked>');
+    expect(sanitized.type).toBe('TOKEN');
+    expect(sanitized.methodArn).toBe(event.methodArn);
+    expect(event.authorizationToken).toBe('opaque-token-value');
+  });
 
   it.each(['Cookie', 'set-cookie', 'X-Api-Key', 'x-amz-security-token', 'Proxy-Authorization'])(
     'masks the %s header in headers and multiValueHeaders', (name) => {

@@ -352,6 +352,7 @@ class Logger {
    * - `requestContext.authorizer.claims` (the claims of the token an API Gateway authorizer verified)
    *   keeps only sub, cognito:username, token_use, aud, iss, exp, iat and auth_time, so personal data
    *   such as email and phone_number is not logged;
+   * - the `authorizationToken` of a TOKEN authorizer event is masked like a credential header;
    * - a non-empty `body` becomes `<masked>`.
    * The input event is not modified.  Returns an unmasked copy when isRawSecretsAllowed() is true.
    * @param {T} event event object
@@ -409,6 +410,11 @@ class Logger {
         });
       }
       authorizer.claims = kept;
+    }
+
+    // TOKEN authorizer event: the caller's credential is the top-level authorizationToken
+    if (sanitized.authorizationToken !== undefined) {
+      sanitized.authorizationToken = maskValue(sanitized.authorizationToken);
     }
 
     // request body: may carry user input
