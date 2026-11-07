@@ -168,7 +168,8 @@ export class ApiGatewayStack extends cdk.Stack {
     // (addCorsPreflight) are unauthenticated, because browsers send preflights without credentials;
     // they use a mock integration that returns the CORS headers and invoke no function.
     // The Lambda integrations use no credentials role: API Gateway invokes each function through a
-    // Lambda permission that CDK scopes (aws:SourceArn) to that method of this API.
+    // Lambda permission that CDK scopes (aws:SourceArn) to that method of this API's dev stage, plus one
+    // for the console's test invocation (test-invoke-stage); see deploymentStage below.
 
     // info resource
     const info = this.api.root.addResource('info', {
@@ -280,6 +281,10 @@ export class ApiGatewayStack extends cdk.Stack {
       throttlingBurstLimit: THROTTLING_BURST_LIMIT
     });
     devStage.node.addDependency(executionLogGroup);
+    // With deploy: false, CDK writes a stage wildcard into the aws:SourceArn of each method's Lambda
+    // permission (<api id>/*/GET/info), so any stage of this API could invoke the function.  Naming the
+    // stage here makes CDK scope those permissions to <api id>/dev/<method>/<path>, the only stage.
+    this.api.deploymentStage = devStage;
     this.apiUrl = devStage.urlForPath();
 
     // ----------------------------------------

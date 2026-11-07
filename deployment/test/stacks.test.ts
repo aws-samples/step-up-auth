@@ -619,6 +619,23 @@ describe('IAM', () => {
     expect(JSON.stringify(authorizerPermissions[0].Properties.FunctionName)).toContain('stepupauthauthorizerlambda');
   });
 
+  it('scopes each method permission to the dev stage or the console test stage, never to any stage', () => {
+    const template = templates['StepUpAuthApi/APIG'];
+    const [stageId] = Object.keys(template.findResources('AWS::ApiGateway::Stage'));
+    const sourceArns = Object.values(template.findResources('AWS::Lambda::Permission'))
+      .map((p) => p.Properties.SourceArn['Fn::Join'][1])
+      .filter((parts: unknown[]) => !JSON.stringify(parts).includes('/authorizers/'));
+    expect(sourceArns).toHaveLength(8);
+    for (const parts of sourceArns) {
+      expect(JSON.stringify(parts)).not.toContain('/*/');
+    }
+    const methods = ['/GET/info', '/POST/initiate-auth', '/POST/respond-to-challenge', '/POST/transfer'];
+    const stageScoped = sourceArns.filter((parts: unknown[]) => JSON.stringify(parts).includes(JSON.stringify({ Ref: stageId })));
+    expect(stageScoped.map((parts: unknown[]) => parts[parts.length - 1]).sort()).toStrictEqual(methods);
+    const testScoped = sourceArns.filter((parts: unknown[]) => JSON.stringify(parts).includes('/test-invoke-stage/'));
+    expect(testScoped).toHaveLength(4);
+  });
+
   it('configures neither authorizer credentials nor integration credentials', () => {
     const template = templates['StepUpAuthApi/APIG'];
     for (const authorizer of Object.values(template.findResources('AWS::ApiGateway::Authorizer'))) {
