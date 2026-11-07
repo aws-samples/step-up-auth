@@ -75,6 +75,7 @@ buildAll() {
   lambdaSbom step-up-initiate
   lambdaSbom sample-api
   sbom sample-web-app
+  deploymentSbom
 }
 # write a CycloneDX software bill of materials of what one Lambda function ships to
 # ../source/<project>/build/sbom/<project>.cdx.json: every package installed in build/dist, the
@@ -96,6 +97,13 @@ sbom() {
   project_name=$1
   echo ">> writing ${project_name} SBOM"
   ( cd ../source/${project_name} && mkdir -p build/sbom && npm sbom --sbom-format cyclonedx --sbom-type application --omit dev > build/sbom/${project_name}.cdx.json ) || exit 3
+}
+# write a CycloneDX software bill of materials of the CDK app's production dependencies (aws-cdk-lib,
+# constructs, source-map-support and their dependencies, from deployment/package-lock.json) to
+# build/sbom/deployment.cdx.json
+deploymentSbom() {
+  echo ">> writing deployment SBOM"
+  ( mkdir -p build/sbom && npm sbom --sbom-format cyclonedx --sbom-type application --omit dev --package-lock-only > build/sbom/deployment.cdx.json ) || exit 3
 }
 
 # build one lambda/project incrementally.  this func performs a very
