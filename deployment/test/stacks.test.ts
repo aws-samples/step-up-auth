@@ -958,7 +958,7 @@ describe('web UI exposure', () => {
     const policyId = config.DefaultCacheBehavior.ResponseHeadersPolicyId.Ref;
     const headers = template.toJSON().Resources[policyId].Properties.ResponseHeadersPolicyConfig.SecurityHeadersConfig;
     expect(headers.FrameOptions).toStrictEqual({ FrameOption: 'DENY', Override: true });
-    expect(headers.ContentSecurityPolicy).toStrictEqual({ ContentSecurityPolicy: "frame-ancestors 'none'", Override: true });
+    expect(headers.ContentSecurityPolicy).toStrictEqual({ ContentSecurityPolicy: "frame-ancestors 'none'; form-action 'self'", Override: true });
     expect(headers.StrictTransportSecurity).toStrictEqual({ AccessControlMaxAgeSec: 31536000, IncludeSubdomains: true, Override: true });
     expect(headers.ContentTypeOptions).toStrictEqual({ Override: true });
   });

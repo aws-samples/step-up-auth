@@ -92,12 +92,13 @@ export class CloudfrontStack extends cdk.Stack {
     // ----------------------------------------
     //       response security headers
     // ----------------------------------------
-    // the web app must not be framed by another site (clickjacking), is served over HTTPS only (HSTS)
+    // the web app must not be framed by another site (clickjacking), its forms can submit only to its
+    // own origin (form-action, which has no default-src fallback), it is served over HTTPS only (HSTS)
     // and is not content-sniffed
     const securityHeaders = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeadersPolicy', {
       comment: 'step-up-auth web app security headers',
       securityHeadersBehavior: {
-        contentSecurityPolicy: { contentSecurityPolicy: "frame-ancestors 'none'", override: true },
+        contentSecurityPolicy: { contentSecurityPolicy: "frame-ancestors 'none'; form-action 'self'", override: true },
         frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
         strictTransportSecurity: {
           accessControlMaxAge: cdk.Duration.days(365),
